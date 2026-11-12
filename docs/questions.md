@@ -32,15 +32,15 @@ khác câu trả lời thật → ghi task cần sửa lại.
   hoạch test hiệu năng Sprint 4.
 
 ### Q-003 — Đã có design partner / khách hàng đầu tiên chưa?
-- **Trạng thái**: Open
+- **Trạng thái**: Answered (2026-11-12)
 - **Người hỏi**: orchestrator (dựng skeleton)
 - **Ngày hỏi**: 2026-11-12
-- **Phương án đề xuất**: Không có — xây theo backlog tổng quát, dùng dữ
-  liệu demo tự tạo.
-- **Hạn cần quyết**: Trước Sprint 3 (ảnh hưởng độ ưu tiên tính năng theo
-  nhu cầu thật của 1 khách cụ thể, nếu có).
-- **Bị chặn nếu không trả lời**: Không chặn tiến độ kỹ thuật; có thể lệch
-  ưu tiên tính năng nếu có khách thật với yêu cầu riêng.
+- **Câu trả lời (PO)**: Chưa có.
+- **Tác động**: Xây theo backlog tổng quát, dùng dữ liệu demo tự tạo; nhất
+  quán với D-004 (domain pack thứ hai cũng chỉ là pack tổng hợp vì chưa có
+  khách thật để cấu hình theo). Hỏi lại trước Sprint 3 nếu tình hình đổi
+  (có khách/design partner xuất hiện) — khi đó cần ưu tiên lại backlog
+  theo yêu cầu thật của khách.
 
 ### Q-004 — Domain pack thứ hai ở Sprint 4: thiết bị công nghiệp hay SaaS?
 - **Trạng thái**: Answered (2026-11-12)
