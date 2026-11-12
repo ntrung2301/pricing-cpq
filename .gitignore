@@ -1,0 +1,45 @@
+# --- Java / Maven / Gradle ---
+target/
+build/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.gradle/
+out/
+HELP.md
+.mvn/
+!**/.mvn/wrapper/maven-wrapper.jar
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+coverage/
+.turbo/
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Logs ---
+*.log
+npm-debug.log*
+logs/
+
+# --- Testcontainers / Docker ---
+.docker/
+
+# --- OS ---
+Thumbs.db
