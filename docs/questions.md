@@ -9,27 +9,27 @@ khác câu trả lời thật → ghi task cần sửa lại.
 ---
 
 ### Q-001 — Nguồn dữ liệu fitment (ACES/PIES hay tự nhập)?
-- **Trạng thái**: Open
+- **Trạng thái**: Answered (2026-11-12)
 - **Người hỏi**: orchestrator (dựng skeleton)
 - **Ngày hỏi**: 2026-11-12
-- **Phương án đề xuất**: Sprint 1-2 dùng dữ liệu fitment nhập tay/CSV tối
-  giản, thiết kế schema để map ACES/PIES sau (không import chuẩn ACES/PIES
-  thật trong MVP).
-- **Hạn cần quyết**: Trước S1-T7 (data model) chốt chi tiết field — nếu
-  chưa trả lời, backend-dev dùng phương án đề xuất.
-- **Bị chặn nếu không trả lời**: Không chặn Sprint 1 (dùng default); có thể
-  cần sửa schema nếu câu trả lời khác default đáng kể.
+- **Câu trả lời (PO)**: Nhập từ Excel/CSV; cột trong file phải **match
+  đúng tên** với column/attribute đã định nghĩa trong bảng (không cần UI
+  mapping linh hoạt kiểu kéo-thả cho MVP — tên cột sai thì báo lỗi, không
+  tự đoán).
+- **Tác động**: E1-04 (`docs/backlog.md`) cập nhật: import framework core
+  chỉ cần match tên cột ↔ tên attribute của entity definition, không cần
+  xây UI mapping cột tuỳ ý ở MVP. Field fitment vẫn tự nhập/CSV (không
+  chuẩn ACES/PIES thật), nhưng schema vẫn thiết kế để map ACES/PIES sau.
 
 ### Q-002 — Quy mô catalog dự kiến (số part, số fitment)?
-- **Trạng thái**: Open
+- **Trạng thái**: Answered (2026-11-12)
 - **Người hỏi**: orchestrator (dựng skeleton)
 - **Ngày hỏi**: 2026-11-12
-- **Phương án đề xuất**: Giả định vài nghìn part, vài chục nghìn fitment
-  combination cho MVP demo; không tối ưu cho triệu-dòng ở MVP.
-- **Hạn cần quyết**: Trước Sprint 4 (test hiệu năng) — ảnh hưởng mức độ cần
-  tối ưu index/pagination.
-- **Bị chặn nếu không trả lời**: Không chặn Sprint 1-3; Sprint 4 test hiệu
-  năng sẽ dùng giả định này nếu chưa có câu trả lời.
+- **Câu trả lời (PO)**: Vài nghìn part cho hiện tại (khớp với giả định mặc
+  định đã đề xuất).
+- **Tác động**: Không cần tối ưu cho quy mô triệu-dòng ở MVP/Sprint 4; giữ
+  giả định "vài nghìn part, vài chục nghìn fitment combination" trong kế
+  hoạch test hiệu năng Sprint 4.
 
 ### Q-003 — Đã có design partner / khách hàng đầu tiên chưa?
 - **Trạng thái**: Open
@@ -43,22 +43,24 @@ khác câu trả lời thật → ghi task cần sửa lại.
   ưu tiên tính năng nếu có khách thật với yêu cầu riêng.
 
 ### Q-004 — Domain pack thứ hai ở Sprint 4: thiết bị công nghiệp hay SaaS?
-- **Trạng thái**: Open
+- **Trạng thái**: Answered (2026-11-12)
 - **Người hỏi**: orchestrator (dựng skeleton)
 - **Ngày hỏi**: 2026-11-12
-- **Phương án đề xuất**: SaaS (ít thuộc tính vật lý hơn thiết bị công
-  nghiệp, nên là bài test "đơn giản hơn" tốt hơn cho mục tiêu validate kiến
-  trúc). Architect xác nhận lại đầu Sprint 4.
-- **Hạn cần quyết**: Trước khi bắt đầu Sprint 4.
-- **Bị chặn nếu không trả lời**: Chặn task E7-01 — cần biết domain để viết
-  entity/constraint cụ thể.
+- **Câu trả lời (PO)**: Không chốt ngành cụ thể bây giờ — domain pack thật
+  thứ hai sẽ được cấu hình **khi có khách hàng thật**. Yêu cầu là schema/
+  metamodel phải được xây **generic nhất có thể** ngay từ đầu, không thiết
+  kế ngầm theo một ngành giả định.
+- **Tác động**: Đổi cách làm E7-01 (`docs/backlog.md`) và Sprint 4
+  (`docs/roadmap.md`) — Sprint 4 không build một domain pack ngành thật
+  (SaaS/thiết bị công nghiệp), mà dùng **1 domain pack tổng hợp/tối giản
+  (synthetic)** chỉ để kiểm chứng "cấu hình đủ, không cần sửa lõi". Domain
+  pack thật thứ hai sẽ làm sau, khi có khách hàng cụ thể yêu cầu. Xem
+  D-004 trong `docs/decisions.md`.
 
 ### Q-005 — Cấu hình scheduled task báo cáo sáng (giờ, nội dung)?
-- **Trạng thái**: Open
+- **Trạng thái**: Answered (2026-11-12)
 - **Người hỏi**: orchestrator (dựng skeleton)
 - **Ngày hỏi**: 2026-11-12
-- **Phương án đề xuất**: Xem đề xuất trong phần tổng kết của orchestrator
-  (giờ + nội dung) — chưa tự tạo scheduled task, chờ PO duyệt.
-- **Hạn cần quyết**: Trước khi scheduled task được tạo thật.
-- **Bị chặn nếu không trả lời**: Chặn việc tạo scheduled task; không chặn
-  việc viết `docs/daily-report-prompt.md` (đã có nội dung đề xuất sẵn).
+- **Câu trả lời (PO)**: Đồng ý với đề xuất — 8:00 sáng Thứ Hai–Thứ Sáu
+  (giờ VN), nội dung theo `docs/daily-report-prompt.md`.
+- **Tác động**: Đăng ký scheduled task thật qua skill `schedule`.

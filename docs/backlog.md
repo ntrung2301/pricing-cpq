@@ -42,11 +42,15 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
   - Field mapping có ghi chú tương ứng ACES/PIES (chưa cần map thật).
 
 ### E1-04 [core] (M) Catalog import framework (CSV/Excel)
-- **Mô tả**: Core cung cấp khung import generic (map column → attribute
-  theo entity definition); domain pack cung cấp mapping cụ thể.
+- **Mô tả**: Core cung cấp khung import generic: tên cột trong file
+  CSV/Excel phải **match đúng tên** attribute đã định nghĩa trong entity
+  definition hiện hành (không cần UI mapping kéo-thả cho MVP — quyết định
+  D-005). Domain pack chỉ cung cấp entity definition (tên attribute), core
+  không biết tên cột cụ thể.
 - **Acceptance criteria**:
-  - Import CSV theo mapping config tạo đúng entity instance.
-  - Lỗi mapping (thiếu cột bắt buộc) báo lỗi rõ, không crash import.
+  - Import CSV có cột khớp đúng tên attribute → tạo đúng entity instance.
+  - Cột sai tên/thiếu cột bắt buộc → báo lỗi rõ theo dòng/cột, không crash
+    import, không tự đoán mapping.
 
 ---
 
@@ -155,16 +159,21 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
 
 ---
 
-## Epic 7 — Domain Pack thứ hai (Validate kiến trúc) [pack:tbd]
+## Epic 7 — Domain Pack thứ hai tổng hợp (Validate kiến trúc) [pack:synthetic]
 
-### E7-01 [pack:tbd] (L) Dựng domain pack thứ hai (Sprint 4)
-- **Mô tả**: Domain đơn giản hơn automotive (ví dụ thiết bị công nghiệp hoặc
-  SaaS — PO chọn, xem Open Questions). Mục tiêu: validate tùy biến bằng
-  cấu hình, không sửa lõi.
+### E7-01 [pack:synthetic] (L) Dựng domain pack tổng hợp thứ hai (Sprint 4)
+- **Mô tả**: Theo D-004 — domain pack thật (ngành cụ thể) sẽ được cấu hình
+  khi có khách hàng thật, nên Sprint 4 **không** chọn một ngành thật
+  (SaaS/thiết bị công nghiệp). Thay vào đó dựng 1 domain pack **tổng hợp,
+  trung lập ngành** (entity/attribute/constraint/rule giả định, đơn giản
+  hơn automotive) chỉ để chứng minh metamodel đủ generic.
 - **Acceptance criteria**:
   - Dựng được luồng tối thiểu (catalog → configure → price → quote) cho
-    domain mới chỉ bằng cấu hình + (nếu cần) extension point đã có.
-  - Nếu phải sửa lõi: ghi rõ chỗ nào, tại sao, vào `docs/decisions.md`.
+    domain tổng hợp chỉ bằng cấu hình + (nếu cần) extension point đã có,
+    không thêm entity/constraint type mới vào core.
+  - Nếu phải sửa lõi: ghi rõ chỗ nào, tại sao, vào `docs/decisions.md` —
+    đây là tín hiệu ranh giới core/pack sai, không phải lỗi nhỏ.
+  - Không ảnh hưởng/regress domain pack automotive đã có.
 
 ---
 

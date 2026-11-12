@@ -92,14 +92,15 @@ bằng domain pack thứ hai.
 - DevOps: Helm chart hoàn chỉnh, chiến lược nâng cấp/migration nhiều
   cluster, observability, backup/restore (kế hoạch + cấu hình tối thiểu).
 - Tài liệu: hướng dẫn vận hành/triển khai tối thiểu cho khách mới.
-- **E7-01**: dựng domain pack thứ hai (đơn giản hơn automotive) — validate
-  tùy biến bằng cấu hình. Nếu phải sửa lõi vượt một extension point hợp lý
-  → ghi nhận vào `docs/decisions.md` là ranh giới sai, báo PO ngay, không
-  chờ cuối sprint.
+- **E7-01**: dựng domain pack **tổng hợp/trung lập ngành** thứ hai (theo
+  D-004 — domain pack ngành thật sẽ cấu hình sau, khi có khách hàng cụ thể;
+  Sprint 4 chỉ cần chứng minh metamodel đủ generic). Nếu phải sửa lõi vượt
+  một extension point hợp lý → ghi nhận vào `docs/decisions.md` là ranh
+  giới sai, báo PO ngay, không chờ cuối sprint.
 
 **Tiêu chí demo**: MVP automotive chạy ổn định qua regression suite; domain
-pack thứ hai dựng xong luồng tối thiểu, có kết luận rõ "cấu hình đủ" hay
-"phải sửa lõi — ghi nhận ở đâu".
+pack tổng hợp thứ hai dựng xong luồng tối thiểu, có kết luận rõ "cấu hình
+đủ" hay "phải sửa lõi — ghi nhận ở đâu".
 
 **Rủi ro**: Domain pack thứ hai lộ ra lỗ hổng kiến trúc sát ngày ra mắt —
 đây là mục đích của việc làm nó ở Sprint 4 (phát hiện sớm hơn launch thật),
