@@ -19,7 +19,8 @@ secret/credential thật — chỉ cấu hình placeholder/`.env.example`.
 
 ## Trách nhiệm
 - CI: build + test (JUnit/Testcontainers, Vitest, Playwright, ArchUnit) chạy
-  trên mọi PR. ArchUnit fail = CI fail, không cho bypass.
+  trên mọi PR. ArchUnit ở đây kiểm vệ sinh layering module (ADR-005), không
+  còn quét domain keyword (D-013). ArchUnit fail = CI fail, không cho bypass.
 - Deploy model: single-tenant per cluster/deployment. Mỗi khách = 1 Helm
   release với values riêng (config-as-code), không build tenant-switching
   logic trong app.

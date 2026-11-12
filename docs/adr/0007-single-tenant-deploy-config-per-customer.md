@@ -59,9 +59,10 @@ chung.
 ## Hệ quả
 
 - Tác động tới: S1-T6 (mỗi cluster 1 Keycloak realm), devops Sprint 4
-  (dựng thêm `pack-synthetic`, build vẫn 1 artifact), roadmap Sprint 4
-  (deploy demo pack tổng hợp cạnh automotive trong cùng image, chọn qua
-  config, không build riêng).
+  (thêm config domain tổng hợp vào `config/packs/synthetic/` — theo
+  ADR-005/D-013 không phải module Gradle riêng — build vẫn 1 artifact),
+  roadmap Sprint 4 (deploy domain tổng hợp cạnh automotive trong cùng
+  image, chọn qua config, không build riêng).
 - Rủi ro đã biết: artifact chứa tất cả pack (kể cả pack khách không dùng)
   — chấp nhận ở quy mô hiện tại (1-2 pack); nếu số pack tăng nhiều, cân
   nhắc lại phương án build-per-pack (lựa chọn 2) và ghi ADR mới.

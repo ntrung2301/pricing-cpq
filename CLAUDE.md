@@ -15,24 +15,31 @@ không đứng chờ" trong `docs/process.md`.
 Tài liệu & báo cáo: **tiếng Việt**. Code, tên file, tên biến, commit message,
 PR title: **tiếng Anh**.
 
-## Ranh giới Core vs Domain Pack (bất khả xâm phạm)
+## Ranh giới Core vs Domain (nguyên tắc thiết kế, không phải module code) [D-013]
 
-- Package lõi (`core.*` hoặc tương đương) **không được chứa** từ khóa domain:
-  `part`, `fitment`, `VIN`, `supersession`, `OEM`, `aftermarket`, `vehicle`,
-  `make/model/year`, v.v. Lõi chỉ biết: entity, attribute, relationship,
-  constraint, rule, price list, quote — tất cả generic, định nghĩa bằng dữ
-  liệu (metamodel).
-- "Fitment theo xe" chỉ là **một loại constraint cụ thể** được domain pack
-  automotive định nghĩa, không phải khái niệm lõi.
-- Domain pack = dữ liệu/config (entity definitions, constraint types, rule
-  sets, import mappings, UI labels) + (khi cần) extension code qua SPI, không
-  sửa core.
-- **ArchUnit test bắt buộc trong CI** (sprint 1) để chặn domain keyword lọt
-  vào package lõi và chặn core phụ thuộc vào domain pack. Vi phạm ranh giới =
-  build fail, không bàn cãi.
-- Khi domain pack thứ hai (Sprint 4) buộc phải sửa lõi nhiều hơn một
-  extension point hợp lý → đây là tín hiệu ranh giới sai, phải ghi nhận vào
-  `docs/decisions.md` và báo PO, không âm thầm vá.
+- **Không còn tách core/pack bằng module/package Java riêng, không còn
+  ArchUnit chặn từ khóa domain.** Quyết định ban đầu (module `pack-*` +
+  ArchUnit quét keyword) đã bị PO override ở D-013 — xem `docs/decisions.md`.
+  Lý do: với metamodel EAV có kiểu (ADR-001), domain knowledge tự nhiên đã
+  là **dữ liệu** (entity/attribute/relationship/constraint definitions),
+  không phải code Java — nên không có package `pack.*` nào tồn tại để cấm.
+- Nguyên tắc vẫn giữ (chỉ đổi cơ chế thực thi): engine lõi (metamodel,
+  constraint engine, pricing/rule engine, quote, admin) phải luôn generic —
+  không viết business logic Java riêng cho automotive hay bất kỳ ngành nào.
+  "Fitment theo xe" vẫn chỉ là **một loại constraint cụ thể**
+  (`compatibility`), không phải khái niệm lõi.
+- Automotive là **domain đầu tiên có thật**, dựng làm dữ liệu/config cấu
+  hình thật (entity/attribute/relationship/constraint/rule definitions,
+  import mapping) để MVP chạy end-to-end và để validate engine — không phải
+  module code riêng (không có `pack-automotive` trong cấu trúc Gradle).
+  Domain khác (khách hàng thật sau này) cũng chỉ là thêm cấu hình, không
+  thêm code.
+- **Cách xác minh tính generic**: Sprint 4 phải thêm được 1 domain tổng hợp
+  (synthetic, D-004) chỉ bằng dữ liệu/config, **không sửa bất kỳ file Java
+  nào trong engine lõi** — xác minh bằng diff code = rỗng ngoài file
+  config/seed data mới, không phải bằng ArchUnit. Nếu phải sửa code lõi →
+  tín hiệu ranh giới thiết kế sai, ghi nhận vào `docs/decisions.md` và báo
+  PO, không âm thầm vá.
 
 ## Quy tắc làm việc chung
 
@@ -60,9 +67,15 @@ PR title: **tiếng Anh**.
    khi đó ghi vào `docs/questions.md` và báo trong standup.
 7. **Pricing phải deterministic, kiểm toán được, test được.** Tiền luôn dùng
    `BigDecimal` (không `double`/`float`). Rule (giá, chiết khấu, ràng buộc)
-   lưu dạng dữ liệu (JSON/DSL), không hard-code trong Java/TS. Mọi phép tính
-   giá phải tạo ra "price waterfall" giải thích được (list price → các bước
-   điều chỉnh → final price), lưu lại được để audit.
+   lưu dạng dữ liệu, không hard-code trong Java/TS đã compile sẵn — gồm cả
+   rule JSON DSL (do visual rule builder sinh ra) và rule Groovy script
+   (nhập/sửa qua UI cho rule nâng cao — xem ADR-002), cả hai đều lưu là text
+   trong DB/config, không phải class Java cố định. Groovy phải chạy sandbox
+   (không I/O, không reflection thoát sandbox, có timeout) và vẫn phải sinh
+   ra đúng 1 danh sách waterfall step xác định — không được dùng nguồn
+   non-deterministic (giờ hệ thống, random không seed) trong rule. Mọi phép
+   tính giá phải tạo ra "price waterfall" giải thích được (list price → các
+   bước điều chỉnh → final price), lưu lại được để audit.
 8. **Single-tenant per deployment.** Không viết code tenant isolation. Cấu
    hình theo từng khách = config-as-code (domain pack + override), không phải
    multi-tenant runtime switching.

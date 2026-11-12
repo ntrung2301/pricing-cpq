@@ -1,6 +1,6 @@
 # ADR-001: Metamodel động và cơ chế domain pack
 
-- **Trạng thái**: Accepted
+- **Trạng thái**: Accepted (revised 2026-11-12 theo PO override, xem D-013)
 - **Ngày**: 2026-11-12
 - **Người quyết**: architect
 
@@ -38,12 +38,18 @@ mà không cần sửa lõi.
    fork code". Loại.
 
 Với cơ chế nạp pack: xét (a) pack là file cấu hình (YAML) đóng gói trong
-module pack, core chỉ có `PackLoaderService` đọc file theo schema chung;
-(b) pack là dữ liệu seed trực tiếp trong DB qua migration riêng của module
-pack. Chọn (a) vì YAML dễ diff/review trong PR, git-track được, và tách
-biệt rõ "core biết schema của pack descriptor" khỏi "core biết nội dung
-domain" — core không đọc file YAML của automotive, chỉ đọc theo cấu trúc
-generic `pack.yaml`.
+module Java riêng (`pack-automotive`), core chỉ có `PackLoaderService` đọc
+file theo schema chung; (b) pack là dữ liệu seed trực tiếp trong DB qua
+migration riêng; (c) pack là file cấu hình (YAML) đặt trong **thư mục
+config** (không phải module Java riêng, không compile riêng), nạp lúc
+khởi động bởi `PackLoaderService` của app. Chọn (c) — **đã sửa sau khi PO
+yêu cầu bỏ tách module code core/pack (D-013)**: so với (a), (c) vẫn giữ
+được lý do chọn YAML ban đầu (dễ diff/review trong PR, git-track được,
+"core biết schema pack descriptor chung" khỏi "core biết nội dung domain")
+nhưng không cần build/compile riêng 1 module Gradle cho mỗi pack — pack chỉ
+là tập file YAML/JSON trong `app/src/main/resources/config/packs/<pack-id>/
+pack.yaml` (hoặc mount từ ngoài lúc deploy nếu cần đổi không build lại).
+So với (b): vẫn chọn file hơn seed DB trực tiếp vì git-diff được trong PR.
 
 ## Quyết định
 
@@ -58,16 +64,17 @@ entity lưu theo mô hình EAV có kiểu: bảng `entity_instance` +
 `entity_instance_attribute_value` (giá trị theo cột đúng type, validate
 theo `attribute_def.data_type` lúc viết).
 
-Domain pack = 1 file `pack.yaml` (đóng gói trong module pack, ví dụ
-`pack-automotive/src/main/resources/pack.yaml`) khai báo: `pack_id`,
-`version`, `entities[]`, `relationships[]`, `constraint_instances[]`,
-`rule_sets[]`, `import_mappings[]`, `ui_labels[]`. `PackLoaderService`
-(thuộc core, chỉ biết cấu trúc generic của `pack.yaml`) nạp lúc khởi động
-(classpath scan `packs/*/pack.yaml`), upsert vào bảng metamodel, mỗi dòng
-gắn `pack_id` + `pack_version` để biết nguồn gốc và cho phép nhiều pack
-cùng tồn tại. Nâng version pack = tăng `version`, loader diff và chặn thay
-đổi phá vỡ dữ liệu hiện có (ví dụ xoá attribute đang có giá trị) trừ khi có
-cờ `allow-breaking` tường minh — phục vụ yêu cầu audit ở CLAUDE.md mục 7.
+Domain pack = 1 file `pack.yaml` (đặt trong thư mục config, ví dụ
+`app/src/main/resources/config/packs/automotive/pack.yaml` — **không phải
+module Java riêng**) khai báo: `pack_id`, `version`, `entities[]`,
+`relationships[]`, `constraint_instances[]`, `rule_sets[]`,
+`import_mappings[]`, `ui_labels[]`. `PackLoaderService` (thuộc app, chỉ
+biết cấu trúc generic của `pack.yaml`) nạp lúc khởi động (classpath scan
+`config/packs/*/pack.yaml`), upsert vào bảng metamodel, mỗi dòng gắn
+`pack_id` + `pack_version` để biết nguồn gốc và cho phép nhiều pack cùng
+tồn tại. Nâng version pack = tăng `version`, loader diff và chặn thay đổi
+phá vỡ dữ liệu hiện có (ví dụ xoá attribute đang có giá trị) trừ khi có cờ
+`allow-breaking` tường minh — phục vụ yêu cầu audit ở CLAUDE.md mục 7.
 
 ## Hệ quả
 
@@ -77,10 +84,12 @@ cờ `allow-breaking` tường minh — phục vụ yêu cầu audit ở CLAUDE.
   điều kiện (join nhiều dòng attribute); chấp nhận vì quy mô vài nghìn part
   (Q-002) không cần tối ưu early, và query phức tạp có thể bọc qua view/
   index theo attribute_def_id phổ biến sau.
-- Ảnh hưởng ranh giới core/pack: **Không** — core chỉ có 4 bảng định nghĩa
-  generic + 2 bảng instance generic + `PackLoaderService` đọc schema
-  `pack.yaml` chung. Domain pack tự kiểm chứng (D-004): một pack tổng hợp
-  ("Widget", "ServicePlan" — không liên quan automotive) nạp được qua đúng
-  cơ chế này mà không cần thêm bảng hay sửa `PackLoaderService`. Việc ACES/
-  PIES (Q-001) sau này chỉ là thêm `attribute_def`/`relationship_def` +
-  `import_mappings` mới trong pack automotive, không đụng core.
+- Ảnh hưởng ranh giới core/pack: **Không** — engine (metamodel + 2 bảng
+  định nghĩa generic + 2 bảng instance generic + `PackLoaderService`) không
+  chứa khái niệm domain nào; không có module Java riêng cho pack (D-013) —
+  pack chỉ là file config. Domain tự kiểm chứng (D-004): một domain tổng
+  hợp ("Widget", "ServicePlan" — không liên quan automotive) nạp được qua
+  đúng cơ chế này mà không cần thêm bảng, sửa `PackLoaderService`, hay thêm
+  bất kỳ file Java nào — chỉ thêm 1 file `pack.yaml` mới. Việc ACES/PIES
+  (Q-001) sau này chỉ là thêm `attribute_def`/`relationship_def` +
+  `import_mappings` mới trong file config automotive, không đụng engine.

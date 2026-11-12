@@ -68,7 +68,7 @@ Hệ quả: Giảm phạm vi kỹ thuật của import framework ở Sprint 2 (E
 giữ thiết kế generic (core không biết tên cột cụ thể của automotive, chỉ
 biết "khớp tên attribute theo entity definition đang cấu hình").
 
-## D-006 — ADR-001: Metamodel EAV có kiểu + domain pack nạp qua pack.yaml (2026-11-12, architect)
+## D-006 — ADR-001: Metamodel EAV có kiểu + domain pack nạp qua pack.yaml (2026-11-12, architect) [PARTIALLY SUPERSEDED by D-013: pack.yaml nay nằm trong thư mục config, không phải module Java riêng]
 Quyết định: Metamodel generic gồm EntityDefinition/AttributeDefinition/
 RelationshipDefinition/ConstraintDefinition; dữ liệu instance lưu EAV có
 kiểu (`entity_instance` + `entity_instance_attribute_value`, giá trị theo
@@ -80,7 +80,7 @@ kiểu giữ được khả năng validate/query mà JSONB tự do không có.
 Hệ quả: core không có bảng "part/vehicle"; mọi domain keyword chỉ tồn tại
 dưới dạng dữ liệu. Chi tiết: `docs/adr/0001-metamodel-and-domain-pack.md`.
 
-## D-007 — ADR-002: Rule engine = JSON DSL tự viết (không Drools/CEL) (2026-11-12, architect)
+## D-007 — ADR-002: Rule engine = JSON DSL tự viết (không Drools/CEL) (2026-11-12, architect) [PARTIALLY SUPERSEDED by D-014: thêm Groovy script như loại rule thứ hai, song song JSON DSL]
 Quyết định: Dùng JSON DSL tự viết (condition vay mượn ngữ pháp JsonLogic,
 không add dependency), action là tập generic hữu hạn do core định nghĩa;
 RuleEngine chạy tuần tự theo (stage, priority, rule.id), không forward-
@@ -117,7 +117,7 @@ rule thay đổi — đáp ứng yêu cầu audit/replay của CLAUDE.md mục 7
 Hệ quả: Tên stage là generic, domain pack chỉ gắn rule vào stage có sẵn.
 Chi tiết: `docs/adr/0004-deterministic-pricing-and-waterfall.md`.
 
-## D-010 — ADR-005: Modular monolith bằng Gradle + ArchUnit 2 lớp (module graph + string-literal scan) (2026-11-12, architect)
+## D-010 — ADR-005: Modular monolith bằng Gradle + ArchUnit 2 lớp (module graph + string-literal scan) (2026-11-12, architect) [SUPERSEDED by D-013: bỏ module pack-*, bỏ ArchUnit quét keyword]
 Quyết định: Module hoá `core-metamodel, core-constraint-engine,
 core-pricing, core-catalog, core-quote, core-security, core-api,
 pack-automotive, pack-synthetic, app`. Chọn Gradle (Kotlin DSL) thay vì
@@ -152,3 +152,46 @@ rủi ro 1 version lỗi ảnh hưởng mọi khách cùng lúc.
 Hệ quả: Việc chọn pack là cấu hình, core không phụ thuộc ngược vào pack cụ
 thể nào. Chi tiết:
 `docs/adr/0007-single-tenant-deploy-config-per-customer.md`.
+
+## D-013 — PO override: bỏ tách module Java core/pack, bỏ ArchUnit chặn domain keyword (2026-11-12, PO)
+Quyết định: Không tách `core-*`/`pack-*` thành module Gradle riêng, không
+dùng ArchUnit quét từ khóa domain (`part/fitment/vehicle/...`) hay chặn
+dependency core→pack như D-010 đề ra. Domain (automotive là domain đầu
+tiên có thật) vẫn được build làm **dữ liệu/config thật** (entity/attribute/
+relationship/constraint/rule definitions trong `pack.yaml`) để MVP chạy
+end-to-end — chỉ đổi cơ chế packaging (file config trong `app`, không phải
+module Java `pack-automotive`) và cơ chế xác minh tính generic (review diff
+ở Sprint 4 thay ArchUnit từ Sprint 1).
+Lý do (PO): Với metamodel EAV (ADR-001), domain knowledge đã luôn là dữ
+liệu — không có package/class nào mang tên domain để ArchUnit quét hay
+chặn, nên tách module + gate CI riêng cho việc này là phức tạp hoá không
+cần thiết. Domain khác automotive (SaaS, thiết bị công nghiệp...) sẽ chỉ là
+cấu hình được tạo riêng cho từng khách hàng thật khi triển khai, không phải
+sản phẩm kỹ thuật của 4 sprint này.
+Hệ quả: Sửa ADR-001 (pack.yaml trong thư mục config, không module), ADR-005
+(bỏ module `pack-*` + ArchUnit 2 lớp, giữ module hoá nội bộ engine +
+ArchUnit vệ sinh layering nhẹ), ADR-007 (wording). Sửa CLAUDE.md mục "Ranh
+giới Core vs Domain Pack" → đổi tên thành "Ranh giới Core vs Domain (nguyên
+tắc thiết kế, không phải module code)". Sửa `docs/sprints/sprint-1.md`
+(S1-T3, S1-T5), `docs/backlog.md` (E1-01), `docs/process.md`,
+`.claude/agents/{backend-dev,architect,qa-engineer,devops}.md` để bỏ nhắc
+"module pack riêng"/"ArchUnit chặn keyword bắt buộc CI", thay bằng "domain =
+config, xác minh bằng review diff ở Sprint 4".
+
+## D-014 — PO override: rule engine hybrid — Groovy (code rule) + JSON DSL (visual rule builder) (2026-11-12, PO)
+Quyết định: Thêm `rule_type: SCRIPT` (Groovy, chạy sandbox, có timeout) làm
+loại rule thứ hai song song `rule_type: DSL` (JSON DSL, D-007) trong cùng
+`RuleEngine`. JSON DSL là target output của visual rule builder (non-
+engineer, E5-01); Groovy dành cho rule do dev/Pricing Admin kỹ thuật viết
+trực tiếp, biểu đạt được logic phức tạp hơn DSL. Cả hai cùng sinh waterfall
+step theo đúng pipeline stage cố định (ADR-004), thứ tự xác định không phụ
+thuộc loại rule.
+Lý do (PO): JSON DSL một mình không đủ linh hoạt cho rule nâng cao; Groovy
+một mình không phù hợp cho UI kéo-thả non-engineer — cần cả hai, mỗi loại
+phục vụ 1 nhóm người dùng khác nhau (Pricing Admin kỹ thuật vs non-
+technical qua visual builder).
+Hệ quả: Sửa ADR-002 (quyết định + hệ quả, thêm rủi ro sandbox Groovy).
+Thêm yêu cầu sandbox/deterministic cho Script vào CLAUDE.md mục 7. Thêm
+rủi ro mới cần qa-engineer/code-reviewer kiểm (sandbox escape, non-
+determinism trong script) — chưa có task cụ thể trong sprint-1, sẽ thêm khi
+viết task S2 (pricing engine) chi tiết.
