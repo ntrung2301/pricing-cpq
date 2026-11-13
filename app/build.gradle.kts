@@ -28,6 +28,11 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    // Persistence runtime (Hibernate) + Spring Data JPA repositories for the
+    // core-metamodel entities (S1-T7) — app is the only module that owns
+    // DB-facing wiring (ADR-005), core-metamodel only has the plain JPA
+    // annotations (jakarta.persistence-api).
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
