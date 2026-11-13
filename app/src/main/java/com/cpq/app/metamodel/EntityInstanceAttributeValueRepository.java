@@ -3,6 +3,7 @@ package com.cpq.app.metamodel;
 import com.cpq.core.metamodel.AttributeDefinition;
 import com.cpq.core.metamodel.EntityInstance;
 import com.cpq.core.metamodel.EntityInstanceAttributeValue;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -17,4 +18,13 @@ public interface EntityInstanceAttributeValueRepository
     /** Used by {@link EntityInstanceService} to upsert (update if already written). */
     Optional<EntityInstanceAttributeValue> findByEntityInstanceAndAttributeDefinition(
             EntityInstance entityInstance, AttributeDefinition attributeDefinition);
+
+    /**
+     * All attribute values written for one instance (S2-T2) — used by
+     * {@code com.cpq.app.constraint.ConstraintInstanceEvaluationService} to
+     * build the generic {@code AttributeBag} it hands to
+     * {@code ConstraintEngine}, one row per attribute the instance
+     * actually has a value for.
+     */
+    List<EntityInstanceAttributeValue> findByEntityInstance(EntityInstance entityInstance);
 }
