@@ -883,3 +883,80 @@ determinism 10 lần) + `PricingEndpointIT` (5 test, MockMvc + JWT giả lập
 qua `KeycloakRealmRoleConverter`, 401 chưa đăng nhập + 3 role đều gọi
 được) — toàn bộ test cũ Sprint 1/S2-T1 vẫn pass (tổng app: 11 test class/
 30 test, core-metamodel 2 class, core-security 2 class — tất cả 0 fail).
+
+## D-027 — S2-T8: Configurator engine — validate-selection + list-compatible API (2026-11-13, backend-dev)
+Quyết định:
+1. **`POST /api/configurator/validate-selection`**: input generic
+   `{"entityInstanceIds": [...]}` (không field tên riêng "vehicleId"/
+   "partId"). Theo đúng khung D-024 điểm 2 (1 `constraint_instance` row =
+   assertion giữa 2 `entity_instance` cụ thể, không phải rule áp cho nhiều
+   cặp): service tìm mọi `constraint_instance` có **cả hai** đầu
+   (`entity_instance_x_id` và `entity_instance_y_id`) nằm trong danh sách
+   đã chọn (`ConstraintInstanceRepository.findBetweenAnyOf`, JPQL `x.id IN
+   :ids AND y.id IN :ids`), evaluate từng cái qua
+   `ConstraintInstanceEvaluationService` (S2-T2) có sẵn. Selection < 2 id,
+   hoặc không có `constraint_instance` nào liên quan → valid=true (pass
+   mặc định, đúng "Done khi" của sprint-2.md: "không có constraint nào
+   liên quan... coi là hợp lệ").
+2. **HTTP status qua giá trị trả về, không qua exception** — theo đúng
+   pattern `ImportController` (S2-T5)/D-022: service trả
+   `ValidateSelectionResponse(valid, violations)`, controller map
+   `valid == false` → `400` (`ResponseEntity.badRequest()`), `valid ==
+   true` → `200`. Chọn cách này (không `throw` + `@ResponseStatus` như
+   `PricingDataNotFoundException`, S2-T10) vì đây không phải lỗi "dữ liệu
+   không tồn tại" (404-shaped) mà là "kết quả nghiệp vụ hợp lệ nhưng
+   không pass" — tránh exception bay qua nhiều lớp chỉ để đổi status code,
+   và cho phép trả kèm chi tiết `violations[]` trong body 400 (yêu cầu
+   "message nêu đúng constraint nào fail"). Đảm bảo không bao giờ 500 cho
+   trường hợp vi phạm constraint — `ConfiguratorEndpointIT` test rõ cả 2
+   nhánh 200/400.
+3. **`ConstraintEvaluationResult` (core-constraint-engine) vẫn chỉ là
+   boolean** (theo đúng ghi chú có sẵn trong javadoc class đó — "turning
+   this into a human-readable explanation is part of the configurator
+   API's job") — message giải thích ("Constraint 'x' (type=y) failed
+   between entity_instance A and entity_instance B") được build hoàn toàn
+   ở `app` (`ConfiguratorServiceImpl.toViolationSummary`), không sửa
+   `core-constraint-engine`.
+4. **Làm thêm "list compatible instances"** (`GET
+   /api/configurator/compatible?anchorInstanceId=X&targetEntityDefCode=Y`)
+   trong task này, không để dành S2-T7 — theo đúng gợi ý trong brief ("nếu
+   bạn làm API này ở đây, S2-T7 sẽ không cần viết lại"). Generic thuần:
+   tìm mọi `constraint_instance` type=`"compatibility"` có
+   `anchorInstanceId` ở 1 trong 2 đầu
+   (`ConstraintInstanceRepository.findByTypeAndEitherEndpoint`), lọc theo
+   "đầu còn lại" có `entity_def.code == targetEntityDefCode`, evaluate
+   PASS mới trả vào kết quả. Hardcode string literal `"compatibility"` ở
+   `ConfiguratorServiceImpl` — không phải vi phạm ranh giới core/domain vì
+   `"compatibility"` đã là 1 giá trị taxonomy generic core tự đặt tên từ
+   S2-T2 (xem javadoc `ConstraintDefinition`: "a generic taxonomy value
+   core already names — e.g. 'compatibility', 'range', 'required-if'"),
+   không phải khái niệm domain như "fitment".
+5. **Không thêm bảng/migration mới** — dùng lại hoàn toàn schema
+   `constraint_instance` của S2-T2 (D-024), chỉ thêm 2 `@Query` method
+   trên `ConstraintInstanceRepository` đã có.
+Lý do: theo đúng scope S2-T8 (sprint-2.md) + E2-01 (docs/backlog.md) +
+khung thiết kế D-024 đã đặt sẵn, nguyên tắc "agent không đứng chờ" (CLAUDE.md
+mục 6) cho các lựa chọn để ngỏ (status code qua response vs exception, có
+làm "list compatible" hay không).
+Hệ quả: `core-api` thêm package `com.cpq.core.api.configurator`
+(`ValidateSelectionRequest`, `ValidateSelectionResponse`,
+`ConstraintViolationSummary`, `CompatibleInstanceSummary`,
+`ConfiguratorService` port, `ConfiguratorController`) — không thêm
+dependency module mới (chỉ record/interface + core-security's
+`@PreAuthorize`, như các port trước). `app` thêm package
+`com.cpq.app.configurator` (`ConfiguratorServiceImpl`), sửa
+`ConstraintInstanceRepository` (2 `@Query` method mới). Không ảnh hưởng
+ranh giới core/domain: test minh hoạ dùng "Sprocket"/"Cog"/"Gizmo" (không
+từ khoá automotive); S2-T7 (fitment automotive thật) sẽ tái dùng
+`listCompatibleInstances` không cần sửa code configurator.
+Verify: `./gradlew build` — BUILD SUCCESSFUL trong 14m46s, 47 task (20
+executed, 27 up-to-date). `app`: 17 test class/58 test, 0 fail — gồm
+`ConfiguratorServiceImplIT` 6/6 mới (service layer: pass/fail/no-relevant-
+constraint/selection<2/list-compatible cả 2 chiều x↔y) và
+`ConfiguratorEndpointIT` 9/9 mới (HTTP: 401 chưa đăng nhập, 200 valid=true,
+400 valid=false kèm message rõ constraint nào fail — không phải 500, 200
+cho cả 3 role, 401/200 cho endpoint compatible). Toàn bộ test Sprint 1/2
+trước đó không regress (`core-constraint-engine` 15/15,
+`core-metamodel` 7/7, `core-pricing` 38/38, `core-security` 2/2,
+`core-catalog` 5/5, `ModuleLayeringArchTest` 2/2 — không cycle core-*,
+không core-* nào depend `app`).

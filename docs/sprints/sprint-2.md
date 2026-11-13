@@ -185,6 +185,28 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   validate qua ConstraintEngine (S2-T2), generic — không biết "xe"/"part".
 - **Done khi**: Chọn combination hợp lệ → pass; vi phạm constraint → lỗi rõ
   (400 có message), không phải lỗi 500.
+- **Trạng thái**: Done (2026-11-13, backend-dev). `POST
+  /api/configurator/validate-selection` (`core-api`/`app`, cùng pattern
+  port `EntitiesController`/`ImportController`): input generic
+  `{entityInstanceIds: [...]}`, tìm mọi `constraint_instance` có cả 2 đầu
+  (x/y) nằm trong selection (D-024 điểm 2 — row = assertion giữa 2
+  instance cụ thể), evaluate qua `ConstraintInstanceEvaluationService`
+  (S2-T2) có sẵn; `valid=false` kèm `violations[]` (message nêu đúng
+  constraint/2 id nào fail) → controller trả `400` (không exception,
+  không 500); không có constraint liên quan hoặc selection <2 id →
+  `200 valid=true`. Làm thêm `GET /api/configurator/compatible?
+  anchorInstanceId=X&targetEntityDefCode=Y` (list entity_instance tương
+  thích qua constraint_instance type="compatibility" PASS, dùng lại được
+  cho S2-T7 fitment automotive sau). Không thêm migration/bảng mới (dùng
+  lại schema S2-T2). Test minh hoạ "Sprocket"/"Cog"/"Gizmo" (không
+  automotive). Chi tiết quyết định: D-027 (`docs/decisions.md`). Verify:
+  `./gradlew build` — BUILD SUCCESSFUL (14m46s); `app` 17 test class/58
+  test pass (gồm `ConfiguratorServiceImplIT` 6/6 mới,
+  `ConfiguratorEndpointIT` 9/9 mới), toàn bộ test Sprint 1/2 trước đó
+  (`core-constraint-engine` 15/15, `core-metamodel` 7/7, `core-pricing`
+  38/38, `core-security` 2/2, `core-catalog` 5/5, `ModuleLayeringArchTest`
+  2/2) không regress. PR: `sprint2-s2-t8-configurator-engine` → `main`,
+  chưa merge.
 
 ### S2-T9 — UI: luồng chọn xe → part tương thích
 - **Người phụ trách**: frontend-dev
