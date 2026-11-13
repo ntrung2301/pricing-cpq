@@ -68,15 +68,16 @@ class EntitiesEndpointIT {
 
     @Test
     void authenticatedCallerSeesSeededEntityDefinitionWithAttributesAsGenericDto() throws Exception {
-        metamodelDefinitionService.defineEntity(
-                "IT_ENTITIES_WIDGET",
-                "IT Entities Widget",
-                1,
-                List.of(
-                        new AttributeDefinition(
-                                "name", "Name", AttributeDataType.STRING, true, null),
-                        new AttributeDefinition(
-                                "quantity", "Quantity", AttributeDataType.NUMBER, false, null)));
+        var seeded =
+                metamodelDefinitionService.defineEntity(
+                        "IT_ENTITIES_WIDGET",
+                        "IT Entities Widget",
+                        1,
+                        List.of(
+                                new AttributeDefinition(
+                                        "name", "Name", AttributeDataType.STRING, true, null),
+                                new AttributeDefinition(
+                                        "quantity", "Quantity", AttributeDataType.NUMBER, false, null)));
 
         mockMvc.perform(
                         get("/api/entities")
@@ -88,6 +89,9 @@ class EntitiesEndpointIT {
                                                 .authorities(new KeycloakRealmRoleConverter())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].code").value(hasItem("IT_ENTITIES_WIDGET")))
+                .andExpect(
+                        jsonPath("$[?(@.code=='IT_ENTITIES_WIDGET')].id")
+                                .value(hasItem(seeded.getId().intValue())))
                 .andExpect(jsonPath("$[?(@.code=='IT_ENTITIES_WIDGET')].label").value(hasItem("IT Entities Widget")))
                 .andExpect(jsonPath("$[?(@.code=='IT_ENTITIES_WIDGET')].version").value(hasItem(1)))
                 .andExpect(

@@ -46,6 +46,7 @@ public class EntityDefinitionQueryServiceImpl implements EntityDefinitionQuerySe
                         .map(EntityDefinitionQueryServiceImpl::toAttributeSummary)
                         .toList();
         return new EntityDefinitionSummary(
+                entityDefinition.getId(),
                 entityDefinition.getCode(),
                 entityDefinition.getLabel(),
                 entityDefinition.getVersion(),
