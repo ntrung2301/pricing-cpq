@@ -41,17 +41,21 @@ làm trước các phần không cần UI).
 theo lát cắt dọc (vertical slice) — mỗi phần đi từ data model → API → UI tối
 thiểu, không làm ngang hết lớp này mới sang lớp khác.
 
-**Deliver** (map Epic 1, 2, 3 trong backlog):
-- E1-01, E1-02 (metamodel + constraint-as-data) [core]
-- E1-03 (entity automotive: Part/Vehicle/Fitment) [pack:automotive]
-- E1-04 (catalog import CSV) [core]
+**Deliver** (map Epic 1, 2, 3 trong backlog; thứ tự theo lát cắt — master
+data trước, xem `docs/sprints/sprint-2.md`):
+- E1-01 (metamodel: entity_instance + key/label attribute + cap 20, D-019)
+  [core]
+- E1-03 (entity automotive Product/Vehicle, key=sku) [pack:automotive]
+- E1-05 (entity automotive Customer, key=customer_id, D-019) [pack:automotive]
+- E1-04 (catalog import CSV cho Product + Customer) [core]
+- E1-02 (constraint-as-data, fitment) [core+pack]
 - E2-01, E2-02 (configurator + luồng chọn xe/part) [core+pack]
 - E3-01, E3-02 (rule engine + price waterfall) [core]
-- E3-04 (phân tầng khách automotive) [pack:automotive]
+- E3-04 (phân tầng khách automotive, phụ thuộc E1-05) [pack:automotive]
 
-**Tiêu chí demo**: Import 1 catalog mẫu automotive → chọn xe → thấy part
-tương thích → chọn part → thấy giá tính ra kèm waterfall đúng theo tier
-khách demo.
+**Tiêu chí demo**: Import master data Product + Customer mẫu → chọn xe →
+thấy part tương thích → chọn part → thấy giá tính ra kèm waterfall đúng
+theo tier khách demo.
 
 **Rủi ro**: Rule engine chọn ở Sprint 1 không đủ linh hoạt cho tier+volume
 break+contract override cùng lúc — nếu lộ ra, quay lại ADR, không vá tạm.

@@ -377,3 +377,132 @@ chạy 2 lần liên tiếp trên stack thật (docker compose postgres+keycloak
 cho transcript đầy đủ. Toàn bộ service khởi động cho bước verify này đã
 được dừng sạch sau khi xong (`docker compose down`, kill các process
 backend/frontend) — xác nhận bằng `lsof`/`docker ps` không còn gì chạy.
+
+## D-019 — ADR-001 amendment: key/label attribute generic trên entity_def + cap 20 attribute/entity_def (2026-11-13, PO)
+Quyết định: Thêm vào metamodel (ADR-001) 2 con trỏ tuỳ chọn trên `entity_def`:
+`key_attribute_def_id` (thuộc tính đóng vai **business key**, duy nhất) và
+`label_attribute_def_id` (thuộc tính dùng làm **tên hiển thị**) — core chỉ
+biết khái niệm "key"/"label" generic, không biết đó là SKU hay Customer ID.
+`entity_instance` thêm 2 cột denormalize `business_key`/`display_label`
+(tên cột generic, index + unique theo `entity_def_id + pack_id +
+business_key`), đồng bộ từ giá trị EAV của key/label attribute lúc ghi —
+tránh phải join `entity_instance_attribute_value` mỗi lần cần tra cứu/kiểm
+tra duy nhất theo khoá nghiệp vụ. Giới hạn tối đa **20 attribute_def/
+entity_def** (gồm cả key/label), validate ở `PackLoaderService` khi nạp
+`pack.yaml`.
+Áp dụng cho pack automotive (Sprint 2): **Product** → key=`sku`,
+label=`name`; **Customer** → key=`customer_id`, label=`name`. Các field còn
+lại (OEM/aftermarket, supersession, kit, core charge, MOQ, đơn vị đóng gói
+cho Product; tier, hợp đồng, liên hệ cho Customer) là attribute thường,
+tính vào quota 20.
+Lý do (PO): Cần chuẩn bị master data (product/customer) qua đúng cơ chế
+metamodel trước khi làm configurator/pricing; cần 1 khoá nghiệp vụ ổn định
+(sku/customer_id) để import/tra cứu/supersession reference nhanh mà vẫn giữ
+generic (core không hardcode tên field domain nào).
+Hệ quả: Sửa `docs/adr/0001-metamodel-and-domain-pack.md` (thêm mục key/
+label + cap 20). Sửa `docs/backlog.md`: E1-01 thêm acceptance criteria
+tương ứng; tách **E1-05 [pack:automotive] Entity Customer** ra khỏi E3-04
+(trước đây Customer chỉ được ngụ ý trong rule phân tầng khách, chưa có
+entity definition riêng) — E3-04 giờ phụ thuộc E1-05. Sửa
+`docs/roadmap.md` Sprint 2 (thêm E1-05 vào danh sách deliver). Thêm
+`docs/sprints/sprint-2.md`, đặt master data (Product qua E1-01/E1-03/E1-04,
+Customer qua E1-01/E1-05/E1-04) làm lát cắt đầu tiên của Sprint 2, trước
+configurator (Epic 2) và pricing (Epic 3).
+
+**Lưu ý quy trình (backend-dev, khi nhận task S2-T1)**: Tại thời điểm
+backend-dev bắt đầu S2-T1, D-019 này + `docs/sprints/sprint-2.md` +
+`docs/backlog.md` (E1-01/E1-03/E1-05/E3-04) + `docs/roadmap.md` (Sprint 2)
+chỉ tồn tại ở dạng **chưa commit** trong working directory của worktree
+chính (`/Users/trungnguyen/Documents/Projects/pricing-cpq`) — `git log`
+(local và `origin/main`) vẫn dừng ở `14cdd0c` (S1-T8), không có commit nào
+chứa các nội dung trên. Vì S2-T1 chạy trên 1 worktree riêng (nhánh tạo từ
+`14cdd0c`), nhánh đó vốn không thấy các thay đổi chưa-commit này. Backend-
+dev đã copy nguyên văn các file trên vào nhánh `sprint2-s2-t1-metamodel-
+key-label` và sẽ commit cùng PR này, để D-019/sprint-2.md không bị mất nếu
+worktree chính bị reset — không tự sửa nội dung PO/PM đã viết, chỉ mang nó
+vào git history. **NEEDS-PO-REVIEW**: các agent Sprint 2 khác (S2-T2..T14,
+mỗi task 1 worktree riêng từ cùng `14cdd0c`) nhiều khả năng gặp đúng tình
+huống này — nên có 1 commit chốt D-019/sprint-2.md/backlog/roadmap thẳng
+lên `main` trước khi dispatch, thay vì để mỗi task tự copy (dễ lệch nội
+dung giữa các nhánh nếu worktree chính còn bị sửa tiếp trong lúc đó).
+
+## D-020 — S2-T1: entity_instance/EAV runtime + PackLoaderService (2026-11-13, backend-dev)
+Quyết định:
+1. **Thư viện parse `pack.yaml`**: `com.fasterxml.jackson.dataformat:
+   jackson-dataformat-yaml` (`YAMLMapper`), version theo Spring Boot BOM
+   (không pin riêng) — tái dùng engine Jackson đã có sẵn qua
+   `spring-boot-starter-web`, tránh thêm 1 thư viện YAML khác (SnakeYAML
+   trực tiếp) không cần thiết. `ObjectMapper` cấu hình
+   `PropertyNamingStrategies.SNAKE_CASE` để `pack.yaml` viết tự nhiên
+   (`pack_id`, `key_attribute`, `data_type`...) mà Java record field vẫn
+   camelCase.
+2. **`PackLoaderService` đặt ở `app/src/main/java/com/cpq/app/pack/`**
+   (đúng ADR-001: "PackLoaderService thuộc app"), cùng các YAML DTO
+   (`PackDescriptor`/`EntityDescriptor`/`AttributeDescriptor`/
+   `RelationshipDescriptor` — Java record, không phải class JPA) và
+   `PackLoadException`. Entity JPA mới (`EntityInstance`,
+   `EntityInstanceAttributeValue`, `AttributeValue` — value holder, không
+   phải `@Entity`) đặt ở `core-metamodel` theo đúng pattern
+   `EntityDefinition`/`AttributeDefinition` (S1-T7): core-metamodel chỉ
+   giữ class JPA/giá trị thuần, `app` giữ repository + service + wiring DB
+   (ADR-005).
+3. **Đồng bộ `business_key`/`display_label`**: thực hiện ở
+   `EntityInstanceService.writeAttributeValue` (Java, không trigger DB) —
+   so khớp `attribute.getId()` với
+   `entityDefinition.getKeyAttributeDefinition()`/
+   `getLabelAttributeDefinition()`, gọi `EntityInstance.syncBusinessKey`/
+   `syncDisplayLabel` rồi `save` lại instance. Dùng
+   `AttributeValue.asDisplayString()` (chuyển mọi kiểu giá trị — string/
+   number/date/boolean/reference — thành 1 string canonical) để cột
+   denormalize vẫn generic, không giả định key/label luôn là STRING.
+   Trùng `business_key` trong cùng `(entity_def_id, pack_id)` → lỗi
+   `DataIntegrityViolationException` từ unique index DB khi flush (đúng
+   yêu cầu "Done khi" S2-T1, không cần check trùng ở tầng service).
+4. **`pack_id`/`pack_version` nullable** trên 4 bảng *definition*
+   (`entity_def`/`attribute_def`/`relationship_def`/`constraint_def`) —
+   giữ tương thích với dữ liệu đã có từ S1-T7/S1-T8 (`TestWidget`,
+   `SampleWidget`) được tạo thẳng qua service, không qua pack.yaml. Ngược
+   lại, `entity_instance.pack_id`/`pack_version` là **NOT NULL** — mọi
+   instance luôn được tạo trong ngữ cảnh 1 pack cụ thể (kể cả pack test
+   giả), không có khái niệm "instance không thuộc pack nào".
+5. **Upsert đơn giản/cộng dồn (additive), chưa có diff/breaking-change
+   guard**: `PackLoaderService` nạp lại pack cùng `pack_id`/`code` sẽ cập
+   nhật `label`/`pack_version` và **thêm** attribute mới nếu có, nhưng
+   không bao giờ xoá/đổi kiểu attribute đã tồn tại. Cơ chế "diff + chặn
+   breaking change khi nâng version pack" mà ADR-001 nhắc tới (xoá
+   attribute đang có giá trị, đổi kiểu...) **chưa làm** — đúng theo scope
+   S2-T1 đã giao (để task sau). **NEEDS-PO-REVIEW**: cần task riêng ở
+   Sprint 2/3 cho việc này trước khi domain pack automotive thật tăng
+   version nhiều lần, nếu không rủi ro mất dữ liệu khi re-load pack.
+6. **Cơ chế "nạp lúc khởi động"**: `PackLoaderService implements
+   ApplicationRunner`, scan `classpath*:config/packs/*/pack.yaml` — chạy
+   thật khi `PricingCpqApplication` khởi động qua `SpringApplication.run`.
+   Xác nhận bằng thực nghiệm: `ApplicationRunner` **không** tự chạy dưới
+   `@SpringBootTest` (Spring Boot test không đi qua
+   `SpringApplication.callRunners()`) — nên mọi IT khác (S1-T7/S1-T8) vẫn
+   pass không đổi dù `PackLoaderService` đã là bean trong context của
+   chúng; test của `PackLoaderService` tự gọi thẳng
+   `loadAllPacksFromClasspath()`/`loadPack(...)` để verify, không dựa vào
+   runner tự chạy.
+Lý do: Theo đúng scope S2-T1 (sprint-2.md) + ADR-001/D-019 + nguyên tắc
+"agent không đứng chờ" (CLAUDE.md mục 6) cho các lựa chọn không có ADR sẵn
+(thư viện YAML cụ thể, nullable vs not-null cho pack_id/pack_version, mức
+độ "upsert" cần làm ngay).
+Hệ quả: `app/src/main/resources/db/migration/V4__entity_instance_and_pack_
+tracking.sql` (mới); `core-metamodel` thêm `EntityInstance`,
+`EntityInstanceAttributeValue`, `AttributeValue`, sửa `EntityDefinition`/
+`AttributeDefinition`/`RelationshipDefinition`/`ConstraintDefinition`
+(thêm `packId`/`packVersion`; `EntityDefinition` thêm
+`keyAttributeDefinition`/`labelAttributeDefinition` + `designateKeyAttribute`/
+`designateLabelAttribute`); `app` thêm `EntityInstanceRepository`,
+`EntityInstanceAttributeValueRepository`, `RelationshipDefinitionRepository`,
+`EntityInstanceService`, `AttributeValueTypeMismatchException`, package
+`com.cpq.app.pack` (`PackLoaderService` + 4 descriptor record +
+`PackLoadException`), dependency Gradle mới
+`jackson-dataformat-yaml` (`app/build.gradle.kts`). Không ảnh hưởng ranh
+giới core/domain: không entity/field nào gắn automotive; `core-metamodel`
+vẫn hoàn toàn generic.
+Verify: `./gradlew build` pass — xem báo cáo S2-T1 cho log đầy đủ (app: 9
+test class / 21 test, bao gồm 3 test case mới của `EntityInstanceServiceIT`
++ 3 của `PackLoaderServiceIT`; `core-metamodel`: 2 test class unit mới,
+không cần Testcontainers).

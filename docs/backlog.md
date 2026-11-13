@@ -15,7 +15,9 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
 ### E1-01 [core] (L) Định nghĩa metamodel động
 - **Mô tả**: Entity, Attribute, Relationship, Constraint là dữ liệu, không
   phải class Java cứng. Domain pack định nghĩa entity (ví dụ "Part") bằng
-  config, không bằng code.
+  config, không bằng code. Bao gồm `entity_instance` +
+  `entity_instance_attribute_value` (EAV có kiểu, ADR-001) — chưa có bảng
+  instance thật nào từ Sprint 1, chỉ có bảng định nghĩa.
 - **Acceptance criteria**:
   - Tạo được 1 entity mới (ví dụ "TestWidget") hoàn toàn qua config (file
     `pack.yaml`), không sửa code Java nào trong engine, hiển thị được qua
@@ -23,6 +25,12 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
   - Test tích hợp xác nhận: thêm entity mới không cần thêm/sửa class Java
     nào (theo D-013, không còn ArchUnit quét keyword domain — xác minh
     bằng test tích hợp + review diff, xem `docs/adr/0005-modular-monolith-structure.md`).
+  - (D-019) `entity_def` khai báo được `key_attribute_def_id` +
+    `label_attribute_def_id`; `entity_instance` có cột denormalize
+    `business_key`/`display_label` tự đồng bộ khi ghi giá trị attribute
+    tương ứng, unique theo `entity_def_id + pack_id + business_key`.
+  - (D-019) `PackLoaderService` từ chối nạp `pack.yaml` nếu 1 entity_def có
+    quá 20 attribute_def.
 
 ### E1-02 [core] (M) Constraint-as-data, bao gồm constraint loại "compatibility"
 - **Mô tả**: Constraint engine generic; "fitment theo xe" sẽ là 1 instance
@@ -34,15 +42,28 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
     thêm constraint type mới trong core.
 
 ### E1-03 [pack:automotive] (M) Entity automotive: Part, Vehicle, Fitment
-- **Mô tả**: Định nghĩa entity Part (part number, OEM/aftermarket,
-  supersession, kit/bundle, core charge, MOQ, đơn vị đóng gói) và Vehicle
-  (make/model/year/engine) qua metamodel, thiết kế để map được ACES/PIES
-  sau này.
+- **Mô tả**: Định nghĩa entity Part (key=`sku`, label=`name`, +
+  OEM/aftermarket, supersession, kit/bundle, core charge, MOQ, đơn vị đóng
+  gói — tối đa 20 attribute theo D-019) và Vehicle (make/model/year/engine)
+  qua metamodel, thiết kế để map được ACES/PIES sau này.
 - **Acceptance criteria**:
-  - Import 1 part mẫu với đủ field trên, query lại đúng.
+  - Import 1 part mẫu với đủ field trên, query lại đúng theo `sku`
+    (business key).
   - Supersession: part A superseded by part B, query ra được chuỗi
-    supersession.
+    supersession (tham chiếu theo `business_key`, không phải id nội bộ).
   - Field mapping có ghi chú tương ứng ACES/PIES (chưa cần map thật).
+
+### E1-05 [pack:automotive] (M) Entity automotive: Customer
+- **Mô tả**: Định nghĩa entity Customer qua metamodel (key=`customer_id`,
+  label=`name`, + tier OEM/Distributor/Dealer/Workshop, mã hợp đồng, thông
+  tin liên hệ — tối đa 20 attribute theo D-019). Tách riêng khỏi E3-04 vì
+  entity definition là việc của Epic 1 (master data), còn E3-04 chỉ là rule
+  giá áp theo tier của Customer đã có ở đây.
+- **Acceptance criteria**:
+  - Import 1 customer mẫu mỗi tier, query lại đúng theo `customer_id`
+    (business key).
+  - Đổi tier của 1 customer qua update instance (không phải entity_def) →
+    query lại thấy tier mới, không ảnh hưởng customer khác.
 
 ### E1-04 [core] (M) Catalog import framework (CSV/Excel)
 - **Mô tả**: Core cung cấp khung import generic: tên cột trong file
@@ -100,8 +121,11 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
     Epic 4 workflow).
 
 ### E3-04 [pack:automotive] (M) Phân tầng khách (OEM/Distributor/Dealer/Workshop) + giá hợp đồng riêng
-- **Mô tả**: Tier khách cụ thể automotive, map vào rule engine generic của
-  E3-01; giá riêng theo hợp đồng override tier mặc định.
+- **Mô tả**: Rule giá áp theo attribute `tier` của entity Customer (đã định
+  nghĩa ở E1-05, không định nghĩa lại ở đây), map vào rule engine generic
+  của E3-01; giá riêng theo hợp đồng override tier mặc định.
+- **Phụ thuộc**: E1-05 (entity Customer phải tồn tại trước khi viết rule
+  theo tier).
 - **Acceptance criteria**:
   - Cùng part, khách khác tier → giá khác đúng theo rule.
   - Khách có hợp đồng riêng → giá hợp đồng override tier, có ghi trong
