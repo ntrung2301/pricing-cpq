@@ -1133,3 +1133,123 @@ core-catalog/core-security: 0 fail. Riêng
 `TierBasedPricingServiceIT` chạy lại độc lập trước đó
 (`./gradlew :app:test --tests "com.cpq.app.pricing.TierBasedPricingServiceIT"`)
 cũng 2/2 pass.
+
+## D-029 — S2-T7: relationship_instance generic + seed fitment/supersession automotive thật (2026-11-13, backend-dev)
+Quyết định:
+1. **Migration `V8__relationship_instance.sql`** — bảng
+   `relationship_instance` generic đúng ADR-003: `relationship_def_id`
+   (FK `relationship_def`), `from_instance_id`/`to_instance_id` (FK
+   `entity_instance`, tên generic, không "superseding_product_id"/
+   "superseded_product_id"), `attributes` (TEXT, nullable, JSON tự do —
+   cùng lựa chọn TEXT-không-jsonb mà `constraint_instance.condition` (V5)
+   đã chọn, vì chưa cần query theo JSON operator). Core entity mới
+   `RelationshipInstance` (`core-metamodel`) — cùng hình dạng
+   "plain JPA entity, không business logic" như `ConstraintInstance`
+   (D-024).
+2. **API gợi ý part thay thế**: `GET
+   /api/catalog/instances/{instanceId}/superseded-by` (`core-api`'s
+   `CatalogRelationshipController`/`RelationshipInstanceQueryService`,
+   impl `app`'s `RelationshipInstanceQueryServiceImpl`) — cùng pattern
+   port/controller/impl 3 lớp như `ConfiguratorService` (S2-T8/D-027).
+   Query generic qua `RelationshipInstanceRepository
+   .findByRelationshipDefinitionCodeAndToInstanceId(code, toInstanceId)`
+   (tham số `code` truyền vào, không hardcode ở tầng repository); tầng
+   `app` hardcode hằng số `"supersedes"` khi gọi — cùng lý do D-027 điểm 4
+   đã chấp nhận cho `"compatibility"`: đây là 1 giá trị taxonomy
+   generic/API business-facing do domain pack tự đặt tên, không phải khái
+   niệm core, và là endpoint-specific contract (API này *là* "superseded-
+   by", không phải "related-by-any-code"). Không thêm bảng/migration nào
+   khác ngoài (1).
+3. **Fitment dùng lại nguyên `GET /api/configurator/compatible`
+   (S2-T8, không sửa)** — đúng chỉ dẫn task: chỉ cần tạo dữ liệu
+   `constraint_instance` loại `"compatibility"` thật giữa Product/Vehicle
+   là API có sẵn trả đúng. Điều kiện (`condition`) của mỗi
+   `constraint_instance` fitment là **literal true**
+   (`{"==": [1, 1]}`), không so sánh attribute Product/Vehicle — vì 2
+   entity này không có attribute chung nào để so sánh (`pack.yaml` không
+   được sửa cấu trúc ở task này) và thêm attribute mới chỉ để fitment demo
+   là quá mức cho MVP. Theo đúng khung D-024 điểm 2 ("1 constraint_instance
+   = 1 assertion cụ thể giữa 2 instance xác định"): với dữ liệu fitment
+   được chọn lọc (curated) thủ công, **việc chọn cặp nào có row** chính là
+   quyết định nghiệp vụ, không phải điều kiện bên trong row.
+4. **Seed Vehicle qua CSV mới** (`app/src/main/resources/demo-data/
+   automotive/vehicles.csv`, 5 dòng: Toyota Camry 2018, Honda Civic 2015,
+   Ford F-150 2020, Chevrolet Silverado 2012, Toyota Corolla 2016) —
+   import lại qua `CatalogImportService` có sẵn (S2-T5/D-022), không viết
+   logic import mới. `Vehicle` không có `key_attribute` (D-025 điểm 1),
+   nên không có business_key để tra theo SKU như Product — thêm
+   `EntityInstanceRepository.findByEntityDefinition_CodeOrderByIdAsc`
+   (method mới, generic) để tra theo thứ tự id tăng dần = đúng thứ tự
+   dòng CSV (an toàn vì import ghi tuần tự, đơn luồng, id BIGSERIAL luôn
+   tăng), dùng làm "chỉ mục" cố định map sang kế hoạch fitment bên dưới.
+   **NEEDS-PO-REVIEW (nhẹ)**: cách tra theo thứ tự id thay vì theo field
+   nghiệp vụ là hệ quả trực tiếp của D-025 điểm 1 (Vehicle không có key
+   attribute) — nếu task "computed/composite label" ở đó được làm, nên
+   cân nhắc đổi cách tra này sang business key thật.
+5. **Kế hoạch ghép fitment/supersession là 2 bảng tra cố định trong Java**
+   (`FITMENT_PLAN`: chỉ số dòng Vehicle CSV → list SKU Product tương
+   thích; `SUPERSESSION_PLAN`: SKU mới → SKU cũ, đúng 5 cặp D-026 đã đặt
+   tên gợi ý), không phải dữ liệu trong `pack.yaml`/CSV — vì hiện chưa có
+   cơ chế import nào cho `constraint_instance`/`relationship_instance`
+   (chỉ có import `entity_instance` qua CSV, S2-T5). **NEEDS-PO-REVIEW**:
+   nếu sau này có task thêm cơ chế import/seed generic cho 2 bảng instance
+   này, kế hoạch ghép cặp này nên chuyển thành dữ liệu, không phải code.
+6. **Runner mới `AutomotiveFitmentSeedRunner`** (`app/src/main/java/
+   com/cpq/app/demo/`, `ApplicationRunner` riêng, không mở rộng
+   `DemoDataSeedRunner` của S2-T6) — vì phạm vi khác: S2-T6 chỉ import CSV
+   entity_instance, S2-T7 cần thêm bước tạo `constraint_instance`/
+   `relationship_instance` tham chiếu tới instance đã tồn tại, hình dạng
+   seed khác hẳn, tách riêng để mỗi runner có Definition of Done/test độc
+   lập (giống cách `PackLoaderService` đã tách khỏi `DemoDataSeedRunner`).
+   Thứ tự chạy: cùng chiến lược D-026 đã chọn cho `DemoDataSeedRunner` vs
+   `PackLoaderService` — runner này tự gọi lại
+   `demoDataSeedRunner.run(args)` và
+   `packLoaderService.loadAllPacksFromClasspath()` trước, cả hai đã
+   idempotent nên gọi thêm lần nữa vô hại, đảm bảo Product/Customer và
+   entity_def Vehicle tồn tại trước khi runner này cần, bất kể Spring chọn
+   thứ tự `ApplicationRunner` nào.
+7. **Idempotency**: mỗi bước (seed Vehicle / seed fitment / seed
+   supersession) tự kiểm tra trước khi chạy — Vehicle: đã có instance nào
+   thì bỏ qua cả CSV; fitment: `constraint_def` code
+   `"automotive-fitment"` đã tồn tại thì bỏ qua toàn bộ; supersession: đã
+   có bất kỳ `relationship_instance` nào loại `"supersedes"` thì bỏ qua
+   toàn bộ — cùng đánh đổi "có ≥1 dòng = coi như đã seed đủ" mà D-026 điểm
+   4 đã chấp nhận cho S2-T6.
+8. **Test dùng dữ liệu automotive thật** (`AutomotiveFitmentSeedRunnerIT`,
+   `CatalogRelationshipControllerIT`) — khác quy ước "Gadget/Widget/
+   Sprocket/Cog" của S2-T2/S2-T8, vì chính brief task này xác nhận dùng dữ
+   liệu automotive thật ở đây không vi phạm ranh giới core/domain (toàn bộ
+   là seed data/config, không phải code engine lõi). Test khởi động context
+   Spring Boot thật + Testcontainers Postgres thật (không mock), để
+   `DemoDataSeedRunner`/`PackLoaderService`/`AutomotiveFitmentSeedRunner`
+   tự chạy lúc startup — xác nhận đúng tiêu chí "Done khi" của sprint-2.md
+   bằng chính API thật (`ConfiguratorService.listCompatibleInstances`,
+   `RelationshipInstanceQueryService.findSupersededBy`) và qua HTTP
+   (`GET /api/catalog/instances/{id}/superseded-by`, 401/200, RBAC).
+Lý do: Theo đúng scope S2-T7 (sprint-2.md) + ADR-003 ("Supersession"/
+"Kit") + khung thiết kế D-024/D-025/D-027 đã đặt sẵn, nguyên tắc "agent
+không đứng chờ" (CLAUDE.md mục 6) cho các lựa chọn để ngỏ (TEXT vs jsonb,
+literal-true condition, runner riêng vs mở rộng runner cũ, tra Vehicle
+theo thứ tự id).
+Hệ quả: `core-metamodel` thêm `RelationshipInstance`. `app` thêm
+`RelationshipInstanceRepository` (`com.cpq.app.metamodel`),
+`RelationshipInstanceQueryServiceImpl`/`CatalogRelationshipControllerIT`
+test (`com.cpq.app.catalog`), `AutomotiveFitmentSeedRunner`/
+`AutomotiveFitmentSeedRunnerIT` (`com.cpq.app.demo`), file mới
+`demo-data/automotive/vehicles.csv`; sửa `EntityInstanceRepository`
+(2 method mới: `findByEntityDefinition_CodeOrderByIdAsc`,
+`findByEntityDefinition_CodeAndBusinessKey`) và
+`ConstraintDefinitionRepository` (1 method mới: `findByCode`) — cả 2 chỉ
+thêm method, không đổi hành vi cũ. `core-api` thêm package
+`com.cpq.core.api.catalog`'s `SupersedingInstanceSummary`/
+`RelationshipInstanceQueryService`/`CatalogRelationshipController`.
+Migration mới `app/src/main/resources/db/migration/V8__relationship_instance.sql`.
+Không ảnh hưởng ranh giới core/domain: không bảng/field/code nào mang tên
+"part"/"vehicle"/"fitment" trong `core-metamodel`/`core-api`; dữ liệu
+automotive thật (CSV Vehicle, kế hoạch ghép cặp SKU) nằm hoàn toàn ở `app`
+(seed data), không phải engine lõi.
+Verify: `./gradlew :app:test --tests "com.cpq.app.demo.*" --tests
+"com.cpq.app.catalog.*"` — BUILD SUCCESSFUL, 18/18 test pass (gồm
+`AutomotiveFitmentSeedRunnerIT` 4/4 mới, `CatalogRelationshipControllerIT`
+3/3 mới); `./gradlew build` toàn repo — xem báo cáo task S2-T7 cho kết quả
+đầy đủ.
