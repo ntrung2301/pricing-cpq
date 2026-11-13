@@ -715,3 +715,171 @@ pure Java, pass) + `./gradlew :app:test --tests "com.cpq.app.catalog.*"`
 (9 test — `CatalogImportServiceImplIT` 6 test tích hợp Testcontainers +
 `ImportEndpointSecurityIT` 3 test RBAC MockMvc, pass) + `./gradlew build`
 (toàn repo, kết quả đầy đủ trong báo cáo task).
+
+## D-023 — S2-T10: RuleEngine hybrid DSL+Groovy, sandbox 2 lớp, price list/rule set persistence (2026-11-13, backend-dev)
+Quyết định:
+1. **`PricingContext` không phụ thuộc `core-metamodel`** — `core-pricing`
+   (`RuleEngine`, `PricingContext`, `Rule`, `RuleSet`, `WaterfallStep`,
+   DSL/Script executor) chỉ biết `basePrice`/`quantity`/`Map<String,
+   Object> attributes` (giá trị thuần Java: `BigDecimal`/`String`/
+   `Boolean`/`LocalDate`), không biết `EntityInstance`/`AttributeValue`.
+   Cùng lý do D-024 (S2-T2) đã chọn cho `ConstraintEngine`: giữ engine
+   logic thuần, unit-test được không cần Testcontainers, không kéo JPA
+   vào core-pricing. Tầng glue (`app/.../pricing/PricingCalculationServiceImpl`)
+   là nơi duy nhất map JSON request attributes (Jackson decode thành
+   `Integer`/`Long`/`Double`) sang `BigDecimal` trước khi đưa vào
+   `PricingContext` — tránh so sánh `double` lẫn vào rule evaluation.
+2. **JSON DSL cú pháp cụ thể** (ADR-002 condition grammar, action tối
+   thiểu đủ test): rule definition = `{"conditions": <JsonLogic-ish>,
+   "action": {"type": ..., "value": ..., "label": "..."}}`. 1 rule DSL =
+   tối đa 1 waterfall step (không mảng `actions[]` như ADR-002 gốc mô tả)
+   — đơn giản hoá vì mỗi điều kiện chỉ cần map ra đúng 1 bước giải thích
+   được; nếu Pricing Admin cần nhiều hành động cho cùng điều kiện, tạo
+   nhiều rule cùng `stage`/điều kiện với `priority` khác nhau. Action set
+   (3 action, generic, core định nghĩa — đúng ADR-002 "finite action
+   set"): `percent-discount` (value = % có dấu của `currentAmount`),
+   `fixed-amount` (value = delta tuyệt đối có dấu), `set-price` (value =
+   giá đích, delta tự tính = target - current). Biến điều kiện: 3 tên dự
+   trữ `quantity`/`basePrice`/`currentAmount`, còn lại tra trong
+   `attributes` theo tên (ví dụ `{"var": "tier"}`). Numeric literal JSON
+   parse bằng `DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS` (không
+   phải `double`) — bắt buộc theo CLAUDE.md mục 7.
+3. **Groovy sandbox 2 lớp** (D-014/CLAUDE.md mục 7), cả 2 chạy ở compile
+   time (`GroovyRuleCompiler`, gọi lúc "lưu rule" lẫn mỗi lần
+   `GroovyRuleExecutor` thực thi — compile lại mỗi lần, chấp nhận chi phí
+   này ở quy mô MVP để không tin tưởng ngầm 1 cache có thể chứa rule đã
+   lưu trước khi có sandbox):
+   - Lớp 1: `SecureASTCustomizer` — `importsBlacklist`/`starImportsBlacklist`/
+     `staticImportsBlacklist`/`staticStarImportsBlacklist` chặn
+     `java.io.*`, `java.nio.*`, `java.lang.reflect.*`, `java.net.*`,
+     `Thread`/`Process`/`ProcessBuilder`/`Runtime`, `Date`/`Random`,
+     `System.exit/currentTimeMillis/nanoTime`, `Math.random` — chỉ bắt
+     được khi script dùng `import`.
+   - Lớp 2: `ForbiddenConstructCustomizer` (custom, tự viết — không có API
+     dựng sẵn trong Groovy 4 cho việc này) — 1 `CompilationCustomizer` ở
+     `CompilePhase.SEMANTIC_ANALYSIS` chạy 1 `ClassCodeVisitorSupport` bắt
+     constructor call (`new Date()`, `new Random()`, `new File(...)`...)
+     và method call (`System.exit`, `Thread.sleep`, `Math.random`,
+     `Class.forName`/`getMethod`/`invoke`...) **dù viết fully-qualified,
+     không qua import** — bù lỗ hổng của `SecureASTCustomizer` (list theo
+     tên import, không theo AST thật). Cả `new Random()` có seed hay
+     không đều bị chặn tuyệt đối (không phân biệt seeded/unseeded — rule
+     giá không có nhu cầu hợp lệ nào cần số ngẫu nhiên) — đơn giản hơn yêu
+     cầu gốc ("random không seed") nhưng an toàn hơn (superset).
+     `visitConstructorCallExpression`/`visitMethodCallExpression`/
+     `visitStaticMethodCallExpression` throw `SecurityException` trực
+     tiếp (không qua `SourceUnit.getErrorCollector()`); `GroovyRuleCompiler`
+     bắt mọi `RuntimeException` từ `shell.getClassLoader().parseClass(...)`
+     (bao gồm `MultipleCompilationErrorsException` từ lớp 1 và
+     `SecurityException` từ lớp 2) và bọc thành
+     `RuleDefinitionRejectedException` — contract chung cho "rule bị từ
+     chối lúc validate/compile", không phân biệt lớp nào bắt được.
+   - `SecureASTCustomizer.setImportsBlacklist()`/`setStarImportsBlacklist()`/
+     `setStaticImportsBlacklist()`/`setStaticStarImportsBlacklist()` đã bị
+     Groovy 4.0.23 đánh dấu `@Deprecated` (build log có warning) nhưng vẫn
+     hoạt động đúng — chưa có API thay thế rõ ràng trong 4.0.23; chấp
+     nhận dùng tạm, **NEEDS-PO-REVIEW** nếu nâng Groovy lên major version
+     sau có thể cần viết lại lớp 1 bằng API mới.
+4. **Timeout script = 500ms, `ExecutorService` single-thread-per-task
+   daemon** (`Executors.newThreadPerTaskExecutor`, JDK 19+, có sẵn trên
+   Java 21) ở `GroovyRuleExecutor` — đây là hạ tầng chạy script (phía
+   engine), không phải code trong script, nên không vi phạm chính sách
+   "script không được dùng `Thread`" mà engine áp cho *script* (CLAUDE.md
+   mục 7 + task yêu cầu "timeout là hạ tầng... không phải code trong
+   script"). **Hạn chế đã biết, ghi nhận rủi ro**: với vòng lặp CPU chặt
+   không có điểm interrupt (không I/O, không blocking call), `Thread
+   .interrupt()` không thực sự dừng được thread nền — lệnh gọi
+   `GroovyRuleExecutor.apply()` vẫn trả lỗi `RuleExecutionException`
+   đúng trong khoảng 500ms (caller không bao giờ bị treo), nhưng thread
+   nền có thể tiếp tục chạy ngầm tốn CPU tới khi JVM tắt. Chưa có cơ chế
+   kill cứng (Java không có API an toàn để kill thread đang chạy mà không
+   dùng `Thread.stop()` đã deprecated/unsafe) — **NEEDS-PO-REVIEW**: cần
+   đánh giá lại nếu Groovy script rule được cho phép chạy production với
+   input không tin cậy (hiện tại Pricing Admin kỹ thuật là người duy nhất
+   viết Script rule, rủi ro thấp hơn input từ user cuối).
+5. **Groovy version 4.0.23 / `jackson-databind` 2.17.2`** — không pin
+   riêng, để Spring Boot BOM (`io.spring.dependency-management` qua
+   `cpq.java-conventions`) quản lý, giống cách S2-T1 (D-020) đã làm với
+   `jackson-dataformat-yaml`. `core-pricing/build.gradle.kts` chỉ khai
+   báo `implementation("org.apache.groovy:groovy")` +
+   `implementation("com.fasterxml.jackson.core:jackson-databind")` +
+   `api("jakarta.persistence:jakarta.persistence-api")` (cho JPA entity ở
+   `com.cpq.core.pricing.persistence`, cùng pattern core-metamodel).
+6. **Script rule contract**: script Groovy nhận 4 binding
+   (`quantity`/`basePrice`/`currentAmount`: `BigDecimal`; `attributes`:
+   `Map<String,Object>` bất biến) và phải `return` `null` (rule không áp
+   dụng — giống DSL `conditions` false, không sinh waterfall step) hoặc
+   1 `Map` có khoá `delta` (ép được về `BigDecimal`) + `label` tuỳ chọn.
+   Ghi rõ ở Javadoc `GroovyRuleExecutor` vì đây là "API" duy nhất Pricing
+   Admin kỹ thuật cần biết khi viết Script rule — chưa có UI/doc riêng
+   cho việc này (ngoài task S2-T10).
+7. **Migration `V7__pricing_rule_engine.sql`** (số đã chốt trong task
+   brief, chưa bị branch nào khác lấy tại thời điểm kiểm — V5 đang được
+   `sprint2-s2-t2-constraint-engine` dùng cho `constraint_instance`, V6
+   chưa thấy branch nào dùng tại thời điểm viết; **NEEDS-PO-REVIEW khi
+   merge**: thứ tự merge thật của các PR song song Sprint 2 sẽ quyết định
+   số Vx cuối cùng, có thể cần rebase+renumber theo đúng lưu ý task đã
+   nêu). 4 bảng mới: `price_list`/`price_list_item`/`rule_set`/`rule`
+   (ADR-003 §"Price list", ADR-002/D-014, ADR-004 stage CHECK constraint
+   đúng 6 giá trị). `rule.stage` lưu theo `PricingStage.wireCode()` (ví
+   dụ `"segment-adjustment"`) qua `@Convert(PricingStageConverter.class)`,
+   không phải `Enum.name()` — khớp đúng `CHECK` constraint; `rule.rule_type`
+   lưu `Enum.name()` (`'DSL'`/`'SCRIPT'`) vì khớp sẵn không cần converter.
+   `price_list_item.entity_def_id`/`entity_instance_id` là cột `Long`
+   thuần (không `@ManyToOne` JPA sang `core-metamodel`) — giữ
+   `core-pricing` không phụ thuộc `core-metamodel` (điểm 1); FK thật vẫn
+   khai báo ở DB (migration) để đảm bảo referential integrity, `app`
+   (`PricingCalculationServiceImpl`) chịu trách nhiệm resolve id khi cần.
+8. **API tính giá tối thiểu** (E3-02, scope đúng S2-T10, chưa làm tier
+   khách S2-T12): `POST /api/pricing/calculate`
+   (`PricingController`/`PricingCalculationService` ở `core-api`, impl ở
+   `app`, cùng pattern port/adapter `EntityDefinitionQueryService` của
+   S1-T8). RBAC: `hasAnyRole('SALES','SALES_MANAGER','PRICING_ADMIN')` —
+   cùng lý do `GET /api/entities` (đọc/tính giá không phải hành động sửa
+   rule/giá nhạy cảm theo nghĩa audit E5-03, nên không cần hạn hẹp hơn ở
+   bước này). `price_list_item` chọn theo thứ
+   tự ưu tiên: khớp đúng `entity_instance_id` được truyền lên trước, nếu
+   không có fallback về row "segment" (`entity_instance_id IS NULL`) cho
+   cùng `entity_def_id` — đúng semantics ADR-003 "nullable nghĩa là áp
+   theo điều kiện/segment". Không tìm được `rule_set`/`price_list_item`
+   phù hợp → `PricingDataNotFoundException` (`@ResponseStatus(404)`),
+   không để rơi xuống lỗi 500 chung.
+Lý do: Theo đúng scope S2-T10 (sprint-2.md) + ADR-002/ADR-004/D-014 +
+nguyên tắc "agent không đứng chờ" (CLAUDE.md mục 6) cho các lựa chọn
+không có ADR sẵn (cú pháp DSL cụ thể, cơ chế sandbox 2 lớp cụ thể, cơ chế
+timeout, contract script).
+Hệ quả: Module mới có nội dung: `core-pricing` (`PricingStage`, `RuleType`,
+`PricingContext`, `Rule`, `RuleSet`, `WaterfallStep`, `RuleApplication`,
+`RuleExecutor`, `RuleEngine`, `RuleDefinitionRejectedException`,
+`RuleExecutionException`, package `dsl` — `JsonLogicEvaluator`/
+`DslRuleExecutor`, package `script` — `GroovyRuleCompiler`/
+`ForbiddenConstructCustomizer`/`GroovyRuleExecutor`, package
+`persistence` — `RuleSetEntity`/`RuleEntity`/`PriceListEntity`/
+`PriceListItemEntity`/`PricingStageConverter`). `app` thêm package
+`com.cpq.app.pricing` (`RuleSetRepository`/`PriceListRepository`/
+`PriceListItemRepository`/`PricingCalculationServiceImpl`/
+`PricingDataNotFoundException`/`PricingConfiguration`). `core-api` thêm
+package `com.cpq.core.api.pricing` (`PriceCalculationRequest`/
+`WaterfallStepSummary`/`PriceCalculationResponse`/
+`PricingCalculationService`/`PricingController`). Migration
+`app/src/main/resources/db/migration/V7__pricing_rule_engine.sql`.
+Không ảnh hưởng ranh giới core/domain: không entity/field/action nào gắn
+automotive; `stage` là 6 giá trị generic cố định của ADR-004, action DSL
+(`percent-discount`/`fixed-amount`/`set-price`) và script contract đều
+domain-agnostic.
+Verify: `./gradlew build` pass toàn repo (43 task, `BUILD SUCCESSFUL`).
+`core-pricing`: 38 test (7 class: `PricingStageTest`, `PricingContextTest`,
+`RuleEngineTest`, `HybridRuleEngineTest`, `dsl.DslRuleExecutorTest`,
+`script.GroovyRuleCompilerTest`, `script.GroovyRuleExecutorTest`), 0
+failed — bao gồm test reject Groovy đọc file/`System.exit`/`new Date()`/
+`Random`/`Math.random`/`Thread.sleep`/reflection/`ProcessBuilder` lúc
+compile (không chạy được), test timeout script vòng lặp vô hạn (
+`infiniteLoopScriptIsBoundedByTimeoutNotLeftHanging`, chạy xong <5s thay
+vì treo), và 2 test chạy lại 10 lần so sánh bit-for-bit (DSL+SCRIPT riêng
+và hybrid). `app`: thêm `PricingCalculationServiceIT` (4 test,
+Testcontainers Postgres thật, có test ưu tiên price_list_item theo
+instance vs segment, test rule_set không tồn tại → 404 exception, test
+determinism 10 lần) + `PricingEndpointIT` (5 test, MockMvc + JWT giả lập
+qua `KeycloakRealmRoleConverter`, 401 chưa đăng nhập + 3 role đều gọi
+được) — toàn bộ test cũ Sprint 1/S2-T1 vẫn pass (tổng app: 11 test class/
+30 test, core-metamodel 2 class, core-security 2 class — tất cả 0 fail).
