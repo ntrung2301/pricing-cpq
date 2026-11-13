@@ -148,6 +148,24 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   (deterministic, chạy lại 10 lần so sánh bằng nhau). Test riêng: script
   cố ý đọc file/System.exit/`new Date()` → bị chặn lúc validate/compile,
   không chạy được.
+- **Trạng thái**: Done (2026-11-13, backend-dev). Migration
+  `V7__pricing_rule_engine.sql` (`price_list`/`price_list_item`/
+  `rule_set`/`rule`). `core-pricing` có `RuleEngine` generic (pipeline cố
+  định ADR-004) + `com.cpq.core.pricing.dsl.DslRuleExecutor` (JSON DSL,
+  action `percent-discount`/`fixed-amount`/`set-price`) +
+  `com.cpq.core.pricing.script.GroovyRuleExecutor` (sandbox 2 lớp:
+  `SecureASTCustomizer` + `ForbiddenConstructCustomizer` tự viết, timeout
+  500ms qua `ExecutorService` thread-per-task daemon). API tối thiểu
+  `POST /api/pricing/calculate` (`core-api`/`app`, cùng pattern port S1-
+  T8). Chi tiết quyết định: D-023 (`docs/decisions.md`). Verify:
+  `./gradlew build` — BUILD SUCCESSFUL; `core-pricing` 38 test (7 class)
+  0 fail, bao gồm test reject Groovy đọc file/`System.exit`/`new Date()`/
+  `Random`/`Math.random`/`Thread.sleep`/reflection lúc compile, test
+  timeout vòng lặp vô hạn, 2 test chạy lại 10 lần kết quả giống nhau bit-
+  for-bit (DSL+SCRIPT riêng và hybrid); `app` thêm `PricingCalculationServiceIT`
+  (4 test, Testcontainers) + `PricingEndpointIT` (5 test, MockMvc+JWT) —
+  toàn bộ test Sprint 1/S2-T1 vẫn pass. PR:
+  `sprint2-s2-t10-rule-engine-hybrid` → `main`, chưa merge.
 
 ### S2-T11 — Price waterfall API
 - **Người phụ trách**: backend-dev
