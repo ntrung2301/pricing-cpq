@@ -303,3 +303,77 @@ this manual local verification"); không dùng ROPC cho flow đăng nhập thậ
 của frontend (S1-T8 cần dùng Authorization Code + PKCE qua `web/`, chưa
 làm ở task này). Không có hệ quả tới ranh giới core/domain (3 role là
 khái niệm core theo ADR-006, không role nào gắn automotive).
+
+## D-018 — S1-T8: walking skeleton end-to-end — `GET /api/entities` + React OIDC login (2026-11-13, backend-dev+frontend-dev)
+Quyết định:
+1. **Role cho `GET /api/entities`**: `hasAnyRole('SALES','SALES_MANAGER',
+   'PRICING_ADMIN')` — rộng hơn `PingService` (chỉ `PRICING_ADMIN`, S1-T6
+   skeleton) — vì đây là metamodel metadata đọc-only, generic, không phải
+   hành động pricing/approval nhạy cảm; cả 3 role đều hợp lý cần xem được
+   danh sách entity definition (ví dụ để biết field nào tồn tại trước khi
+   tạo quote).
+2. **Cross-module DI qua interface port**: `EntityDefinitionQueryService`
+   (interface, `core-api`) có `@PreAuthorize` ngay trên method của
+   interface (không phải trên impl) + `EntityDefinitionQueryServiceImpl`
+   (`app`) implement nó, dùng `EntityDefinitionRepository` (cũng ở `app`,
+   theo ADR-005). Lý do: `core-api` không được phép phụ thuộc `app`
+   (`ModuleLayeringArchTest#coreModulesMustNotDependOnApp`), nhưng
+   `EntitiesController` (ở `core-api`, theo đúng pattern
+   `PingController`/`PingService` task yêu cầu) cần gọi logic đọc DB nằm ở
+   `app`. Dependency Inversion (port ở core-api, implementation ở app) giữ
+   đúng cả 2 ràng buộc: controller thin + @PreAuthorize ở "service layer"
+   (ADR-006) + không phá layering. Đặt `@PreAuthorize` trên method
+   interface (không phải override ở impl) vì proxy JDK-dynamic (khi bean
+   implement interface) không chắc đọc được annotation chỉ có trên class
+   impl — đặt ở interface an toàn với cả JDK proxy và CGLIB.
+3. **Seed data thật**: `V3__seed_sample_entity_definition.sql` (Flyway)
+   tạo đúng 1 entity definition `SampleWidget` (3 attribute: name/quantity/
+   notes) — chỉ để chứng minh walking skeleton có dữ liệu Postgres thật
+   trên UI (không mock), ghi rõ trong comment migration là tạm, sẽ bị thay
+   bằng catalog import thật ở Sprint 2 (E1-01). Test tự động
+   (`EntitiesEndpointIT`) seed riêng qua service layer, không phụ thuộc
+   migration này.
+4. **Keycloak client `cpq-web`**: thêm client mới (không sửa `cpq-backend`)
+   — `publicClient: true`, `standardFlowEnabled: true`,
+   `directAccessGrantsEnabled: false` (không ROPC), attribute
+   `pkce.code.challenge.method: S256` (bắt buộc PKCE), redirect/web-origin
+   giới hạn `http://localhost:5173`. Đây chính là việc D-017 đã ghi là
+   "chưa làm, để S1-T8" — Authorization Code + PKCE thật cho frontend,
+   khác hẳn ROPC của `cpq-backend` (chỉ verify backend thủ công).
+5. **Thư viện OIDC frontend**: `oidc-client-ts` + `react-oidc-context`
+   (không dùng Keycloak JS adapter, đang nửa-deprecated) — core framework-
+   agnostic + wrapper React mỏng, không vendor-lock Keycloak.
+6. **CORS**: phát hiện khi chạy Playwright E2E thật — browser preflight
+   `OPTIONS` bị `anyRequest().authenticated()` chặn 401 (chưa cấu hình CORS
+   nào), khiến `fetch()` từ frontend luôn fail với "Failed to fetch" dù
+   token hợp lệ. Thêm `CorsConfigurationSource` (origin mặc định
+   `http://localhost:5173`, override qua `CPQ_WEB_ORIGIN`) + `.cors(...)`
+   vào `SecurityConfig`; viết test `CorsConfigurationIT` trước (TDD) xác
+   nhận preflight trả 200 + `Access-Control-Allow-Origin` đúng. Đây là lỗi
+   thật phát hiện qua bước "không mock" của task — chỉ test MockMvc/
+   Testcontainers thuần không lộ ra được vì không có browser CORS enforcement
+   thật.
+
+Lý do: Theo đúng scope S1-T8 (sprint-1.md) + nguyên tắc "agent không đứng
+chờ" (CLAUDE.md mục 6) cho các lựa chọn không có ADR sẵn (role phạm vi API,
+pattern port/adapter core-api↔app, thư viện OIDC cụ thể).
+
+Hệ quả: `core-api` có thêm 1 package `entities` (DTO + interface), `app` có
+thêm `EntityDefinitionQueryServiceImpl` + migration V3 + CORS config;
+`web/` có `src/auth/` (authConfig, LoginScreen) + `src/entities/`
+(types, entitiesApi, EntitiesList) + `AuthProvider` bọc `App` trong
+`main.tsx`; `keycloak/realm-export.json` có thêm client `cpq-web`; `e2e/`
+(mới, sibling `web/`) chứa Playwright config + test
+`walking-skeleton.spec.ts` — test E2E thật (không mock), login qua Keycloak
+thật, assert dữ liệu `SampleWidget` thật từ Postgres trên UI. Không có hệ
+quả tới ranh giới core/domain (không entity/role nào gắn automotive).
+
+Verify: `./gradlew build` pass (app: 7 test class — bao gồm
+`EntitiesEndpointIT` 5/5, `CorsConfigurationIT` 1/1 — tất cả test cũ vẫn
+pass). `npm run test` (Vitest) 6/6 pass, `npm run lint` sạch, `npm run
+build` thành công. Playwright E2E (`npx playwright test` trong `e2e/`)
+chạy 2 lần liên tiếp trên stack thật (docker compose postgres+keycloak,
+`./gradlew :app:bootRun`, `npm run dev`) — pass cả 2 lần, xem báo cáo S1-T8
+cho transcript đầy đủ. Toàn bộ service khởi động cho bước verify này đã
+được dừng sạch sau khi xong (`docker compose down`, kill các process
+backend/frontend) — xác nhận bằng `lsof`/`docker ps` không còn gì chạy.
