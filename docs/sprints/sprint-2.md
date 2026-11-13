@@ -205,6 +205,38 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   schema sẵn (ADR-003), không thêm bảng.
 - **Done khi**: Query "part tương thích với xe X" trả đúng danh sách; part
   bị supersede → API gợi ý part thay thế.
+- **Trạng thái**: Done (2026-11-13, backend-dev). Migration
+  `V8__relationship_instance.sql` — bảng `relationship_instance` generic
+  (`relationship_def_id`, `from_instance_id`/`to_instance_id` FK
+  `entity_instance`, `attributes` TEXT nullable), core entity
+  `RelationshipInstance` (`core-metamodel`). API mới `GET
+  /api/catalog/instances/{instanceId}/superseded-by`
+  (`core-api`/`com.cpq.core.api.catalog`: `CatalogRelationshipController`/
+  `RelationshipInstanceQueryService`, impl `app`'s
+  `RelationshipInstanceQueryServiceImpl`) — query theo
+  `relationship_def.code = "supersedes"`, `to_instance_id = instanceId`.
+  Fitment "part tương thích xe X" dùng lại nguyên `GET
+  /api/configurator/compatible` (S2-T8, không sửa) — chỉ cần seed dữ liệu
+  `constraint_instance` loại `"compatibility"` thật giữa Product/Vehicle
+  (condition literal-true `{"==": [1, 1]}`, vì Product/Vehicle không có
+  attribute chung để so sánh — cặp nào có row chính là quyết định fitment,
+  theo khung D-024 điểm 2). Seed data: file mới
+  `demo-data/automotive/vehicles.csv` (5 Vehicle: Camry/Civic/F-150/
+  Silverado/Corolla) import qua `CatalogImportService` có sẵn; runner mới
+  `AutomotiveFitmentSeedRunner` (`com.cpq.app.demo/`, tách khỏi
+  `DemoDataSeedRunner` của S2-T6 — phạm vi khác) tạo `constraint_instance`
+  fitment cho vài part/vài xe và `relationship_instance` `supersedes` cho
+  đúng 5 cặp SKU D-026 đã đặt tên gợi ý (`BRK-PAD-NEW-001` supersedes
+  `BRK-PAD-OLD-001`, v.v.) — idempotent trên restart. Test dùng dữ liệu
+  automotive thật (brief task xác nhận không vi phạm ranh giới core/
+  domain ở đây): `AutomotiveFitmentSeedRunnerIT` (4 test, Testcontainers,
+  context Spring Boot thật) + `CatalogRelationshipControllerIT` (3 test,
+  MockMvc + JWT, RBAC 401/200). Chi tiết quyết định: D-029
+  (`docs/decisions.md`). Verify: `./gradlew :app:test --tests
+  "com.cpq.app.demo.*" --tests "com.cpq.app.catalog.*"` — BUILD
+  SUCCESSFUL, 18/18 pass; `./gradlew build` toàn repo — xem báo cáo task
+  S2-T7 cho kết quả đầy đủ. PR: `sprint2-s2-t7-fitment-supersession` →
+  `main`, chưa merge.
 
 ### S2-T8 — Configurator engine: chọn entity + validate constraint
 - **Người phụ trách**: backend-dev
