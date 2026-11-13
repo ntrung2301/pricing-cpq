@@ -61,6 +61,25 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 - **Done khi**: Test tích hợp tạo 1 constraint_def "compatibility", 1
   constraint_instance giữa 2 entity_instance tuỳ ý (không phải Part/Vehicle)
   — evaluate đúng pass/fail theo điều kiện.
+- **Trạng thái**: Done (2026-11-13, backend-dev). Migration
+  `V5__constraint_instance.sql` (bảng `constraint_instance`:
+  `constraint_def_id`, `condition` TEXT, `entity_instance_x_id`/
+  `entity_instance_y_id` FK `entity_instance`, `pack_id`/`pack_version`
+  nullable). `ConstraintEngine` (`core-constraint-engine`, hoàn toàn
+  không phụ thuộc `core-metamodel`/JPA) đánh giá cú pháp JSON ADR-002
+  (`==, !=, >, >=, <, <=, in, and, or, not`, `{"var": "<alias>.
+  <attributeCode>"}`) trên `AttributeBag`/`EvaluationContext` generic.
+  `com.cpq.app.constraint.ConstraintInstanceEvaluationService` (app) là
+  tầng glue duy nhất đọc `EntityInstanceAttributeValue` qua repository,
+  map sang `AttributeBag`, gọi `ConstraintEngine`. Test minh hoạ dùng
+  "Gadget"/"Widget" (không từ khoá automotive). Chi tiết quyết định:
+  D-024 (`docs/decisions.md`). Verify: `./gradlew build` — BUILD
+  SUCCESSFUL; `core-constraint-engine` 15/15 test (unit, grammar ADR-002);
+  `app` 24/24 test (bao gồm `ConstraintInstanceEvaluationServiceIT` 3/3
+  mới, Testcontainers Postgres; `ModuleLayeringArchTest` vẫn pass, không
+  cycle core-*); toàn bộ test Sprint 1/2 trước đó (`core-metamodel` 7/7,
+  `core-security` 2/2) không regress. PR:
+  `sprint2-s2-t2-constraint-engine` → `main`, chưa merge.
 
 ### S2-T3 — Pack automotive: entity Product
 - **Người phụ trách**: backend-dev
