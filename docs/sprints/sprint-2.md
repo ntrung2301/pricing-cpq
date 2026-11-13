@@ -47,8 +47,9 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   gồm `EntityInstanceServiceIT` 3/3, `PackLoaderServiceIT` 3/3,
   `ModuleLayeringArchTest` 2/2, toàn bộ test Sprint 1 vẫn pass), core-
   metamodel 2 test class unit mới (key/label ownership validation,
-  `AttributeValue` type matching) pass. PR:
-  `sprint2-s2-t1-metamodel-key-label` → `main`, chưa merge.
+  `AttributeValue` type matching) pass. PR #1
+  (`sprint2-s2-t1-metamodel-key-label` → `main`) đã merge (commit
+  `d6194bc`) — **agent tự merge, không qua code-reviewer/PO, xem D-021**.
 
 ### S2-T2 — Constraint-as-data: constraint_instance + type "compatibility"
 - **Người phụ trách**: backend-dev
