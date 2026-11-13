@@ -43,3 +43,6 @@ logs/
 
 # --- OS ---
 Thumbs.db
+
+# --- Git worktrees (local parallel-task isolation) ---
+.claude/worktrees/
