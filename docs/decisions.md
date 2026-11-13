@@ -1253,3 +1253,81 @@ Verify: `./gradlew :app:test --tests "com.cpq.app.demo.*" --tests
 `AutomotiveFitmentSeedRunnerIT` 4/4 mới, `CatalogRelationshipControllerIT`
 3/3 mới); `./gradlew build` toàn repo — xem báo cáo task S2-T7 cho kết quả
 đầy đủ.
+
+## D-030 — S2-T9-prereq: generic entity_instance listing API `GET /api/catalog/{entityDefCode}/instances` (2026-11-13, backend-dev)
+Bối cảnh: rà soát `core-api` trước khi giao S2-T9 (UI chọn xe → part tương
+thích) cho frontend-dev phát hiện lỗ hổng: không có API nào list/search
+`entity_instance` (dữ liệu thật) theo entity_def — `GET /api/entities`
+(S1-T8) chỉ list entity_def *definition*/metadata, `GET
+/api/configurator/compatible` (S2-T8) cần sẵn 1 `anchorInstanceId`, `GET
+/api/catalog/instances/{id}/superseded-by` (S2-T7) cũng cần 1 instance id
+sẵn có. Frontend không có cách nào render bảng catalog hay để người dùng
+chọn 1 Vehicle ban đầu. Việc nhỏ, chặn S2-T9 nên làm trước, không chờ PO
+(CLAUDE.md mục 6).
+Quyết định:
+1. **API mới `GET /api/catalog/{entityDefCode}/instances`** — cùng pattern
+   port (`core-api`'s `EntityInstanceQueryService`, `@PreAuthorize` trên
+   interface) / controller (`CatalogInstanceController`) / impl
+   (`app`'s `EntityInstanceQueryServiceImpl`) đã dùng cho
+   `EntityDefinitionQueryService` (S1-T8)/`RelationshipInstanceQueryService`
+   (S2-T7)/`ConfiguratorService` (S2-T8). RBAC: `hasAnyRole('SALES',
+   'SALES_MANAGER', 'PRICING_ADMIN')` — cùng mức đọc-only với `GET
+   /api/entities` (D-018 mục 1), không phải `PRICING_ADMIN`-only như
+   import/write action.
+2. **Response: `EntityInstancePageDto` (page/size/totalElements/
+   totalPages) chứa `List<EntityInstanceSummary>`** (id, businessKey,
+   displayLabel, `Map<String,Object> attributes`). Giá trị attribute lấy
+   nguyên dạng Java (String/BigDecimal/LocalDate/Boolean/Long) — cùng cách
+   `ConstraintInstanceEvaluationService` (S2-T2) đã đọc generic EAV, không
+   viết lại thành public shared helper (2 call site nhỏ, độc lập, không
+   đáng tách utility class).
+3. **Phân trang offset đơn giản** (`page`/`size`, default 0/50, Sort theo
+   `id` ascending để kết quả ổn định) — không cursor-based, theo đúng chỉ
+   dẫn task (Q-002: "vài nghìn part" là quy mô offset pagination xử lý
+   tốt).
+4. **`search` param làm luôn** (không bỏ qua phần tuỳ chọn) — lọc
+   case-insensitive theo `businessKey`/`displayLabel` chứa chuỗi.
+   **Lưu ý kỹ thuật phát sinh giữa lúc làm, NEEDS-PO-REVIEW nhẹ (kỹ
+   thuật, không phải nghiệp vụ)**: thử 1 query JPQL duy nhất dạng
+   `:search IS NULL OR LOWER(...) LIKE ...` để tránh rẽ 2 method — Hibernate
+   (phiên bản dự án đang dùng) suy luận sai kiểu SQL của tham số chỉ xuất
+   hiện trong so sánh `IS NULL` thành `bytea`, gây lỗi "function
+   lower(bytea) does not exist" khi chạy thật trên Postgres (phát hiện qua
+   test thật, không phải suy đoán). Thay bằng 2 method repository riêng
+   (`findByEntityDefinition_Code` không search,
+   `searchByEntityDefinitionCode` có search, service chọn method theo
+   `search` có blank hay không) — đơn giản hơn là cố ép 1 query xử lý cả 2
+   trường hợp.
+5. **404 rõ ràng cho `entityDefCode` không tồn tại** — thêm
+   `EntityDefinitionRepository.existsByCode` (method mới, không fetch-join
+   attribute vì endpoint này không trả entity_def metadata), ném
+   `ResponseStatusException(HttpStatus.NOT_FOUND, ...)` — cùng pattern
+   `CatalogImportServiceImpl` (S2-T5) đã dùng cho cùng loại lỗi.
+6. **Không sửa API/DTO nào đã có** (`/api/configurator/*`, `/api/catalog/
+   */import`, `/api/catalog/instances/*/superseded-by`,
+   `/api/pricing/calculate`) — chỉ thêm method mới vào
+   `EntityInstanceRepository`/`EntityDefinitionRepository` (cả 2 chỉ thêm,
+   không đổi hành vi cũ).
+7. **Thêm 1 mục mới vào sprint-2.md** ("S2-T9-prereq") trước S2-T9, ghi rõ
+   lý do phát sinh (chặn S2-T9) để lịch sử rõ ràng cho người đọc sau — vì
+   việc này không nằm sẵn trong sprint-2.md ban đầu.
+Lý do: nguyên tắc "agent không đứng chờ" (CLAUDE.md mục 6) — lỗ hổng chặn
+hẳn S2-T9 nếu không có API này, có lựa chọn hợp lý mặc định (tái dùng đúng
+pattern port/controller/impl 3 lớp đã chuẩn hoá qua 3 task trước), nên làm
+ngay không chờ PO duyệt trước.
+Hệ quả: `core-api` thêm package `com.cpq.core.api.catalog`'s
+`EntityInstanceSummary`/`EntityInstancePageDto`/`EntityInstanceQueryService`/
+`CatalogInstanceController`. `app` thêm
+`com.cpq.app.catalog.EntityInstanceQueryServiceImpl`; sửa
+`EntityInstanceRepository` (2 method mới: `findByEntityDefinition_Code`
+overload nhận `Pageable`, `searchByEntityDefinitionCode`) và
+`EntityDefinitionRepository` (1 method mới: `existsByCode`) — cả 2 chỉ
+thêm, không đổi hành vi cũ. Không ảnh hưởng ranh giới core/domain: không
+field/code nào mang tên "part"/"vehicle" trong `core-api`/`core-metamodel`;
+engine vẫn hoàn toàn generic theo entity_def code truyền vào.
+Verify: `./gradlew :app:test --tests
+"com.cpq.app.catalog.EntityInstanceQueryServiceImplIT" --tests
+"com.cpq.app.catalog.CatalogInstanceEndpointIT"` — BUILD SUCCESSFUL, 12/12
+test pass mới (6 service-layer, 6 HTTP/RBAC, gồm 1 test đọc dữ liệu
+Vehicle thật seed từ S2-T6/T7 end-to-end); `./gradlew build` toàn repo —
+xem kết quả đầy đủ trong báo cáo task.
