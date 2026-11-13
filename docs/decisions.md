@@ -195,3 +195,26 @@ Thêm yêu cầu sandbox/deterministic cho Script vào CLAUDE.md mục 7. Thêm
 rủi ro mới cần qa-engineer/code-reviewer kiểm (sandbox escape, non-
 determinism trong script) — chưa có task cụ thể trong sprint-1, sẽ thêm khi
 viết task S2 (pricing engine) chi tiết.
+
+## D-015 — Chọn MUI (Material UI) làm component library mặc định cho frontend skeleton (2026-11-13, frontend-dev) [NEEDS-PO-REVIEW]
+Quyết định: Dùng MUI (`@mui/material` + `@emotion/react` + `@emotion/styled`)
+làm component library cho `web/` (S1-T4), vì chưa có ADR của architect chốt
+giữa MUI/AntD/shadcn (CLAUDE.md mục "Tech stack mặc định" chỉ liệt kê 3 lựa
+chọn, chưa quyết định).
+Lý do: Theo "Agent không đứng chờ" (CLAUDE.md), chọn mặc định hợp lý và ghi
+lại thay vì block S1-T4/S1-T8. Các màn hình trong `docs/ux/` (01 chọn
+xe/part, 02 configurator, 03 price waterfall, 04 quote approval) đều nặng
+về data table (DataGrid cho catalog/waterfall/line item) và form phức tạp
+(bộ chọn thuộc tính động, form phê duyệt) — MUI có `DataGrid`, hệ form
+control, và TypeScript support trưởng thành, phù hợp trực tiếp cho các màn
+hình enterprise này mà không cần tự dựng nhiều từ đầu như shadcn (vốn là
+tập component chưa có DataGrid sẵn) hay phụ thuộc hệ sinh thái AntD (thiên
+Trung Quốc, ít phổ biến hơn trong tuyển dụng/tài liệu cộng đồng phương
+Tây cho stack này).
+Hệ quả: `web/` dùng MUI cho toàn bộ UI lõi (catalog list, configurator,
+price waterfall, quote approval) — không trộn thêm AntD/shadcn. Nếu
+architect/PO sau này chốt ADR khác (vd shadcn vì nhẹ hơn, tuỳ biến Tailwind
+dễ hơn), cần 1 task riêng thay thế component library ở `web/`, review lại
+ảnh hưởng tới các component đã viết. PO có thể override quyết định này bất
+kỳ lúc nào; nếu không phản hồi trong 1 sprint, coi như chấp nhận default
+theo quy ước CLAUDE.md.
