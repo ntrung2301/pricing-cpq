@@ -196,7 +196,7 @@ rủi ro mới cần qa-engineer/code-reviewer kiểm (sandbox escape, non-
 determinism trong script) — chưa có task cụ thể trong sprint-1, sẽ thêm khi
 viết task S2 (pricing engine) chi tiết.
 
-## D-015 — S1-T3: repo skeleton Gradle 8 module + Java 21 qua toolchain auto-provisioning (2026-11-13, backend-dev)
+## D-016 — S1-T3: repo skeleton Gradle 8 module + Java 21 qua toolchain auto-provisioning (2026-11-13, backend-dev)
 Quyết định: Dựng skeleton Gradle multi-project (`pricing-cpq`) đúng 8 module
 ADR-005 (`core-metamodel, core-constraint-engine, core-pricing, core-catalog,
 core-quote, core-security, core-api, app`), không có module `pack-*`
