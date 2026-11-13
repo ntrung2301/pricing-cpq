@@ -13,6 +13,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  jpa:
+    # Flyway (above) owns the schema (V1__init.sql, V2__metamodel_definitions.sql,
+    # S1-T7) — Hibernate must never auto-create/alter tables. "validate" also
+    # catches entity/schema drift early (fails fast at context startup).
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
 
 server:
   port: 8080
