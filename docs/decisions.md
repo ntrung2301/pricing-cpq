@@ -506,3 +506,60 @@ Verify: `./gradlew build` pass — xem báo cáo S2-T1 cho log đầy đủ (app
 test class / 21 test, bao gồm 3 test case mới của `EntityInstanceServiceIT`
 + 3 của `PackLoaderServiceIT`; `core-metamodel`: 2 test class unit mới,
 không cần Testcontainers).
+
+## D-021 — S2-T2: constraint_instance + ConstraintEngine generic (2026-11-13, backend-dev)
+Quyết định:
+1. **`ConstraintEngine` không phụ thuộc `core-metamodel`** — đặt hoàn toàn
+   trong `core-constraint-engine` (`AttributeBag`, `EvaluationContext`,
+   `ConditionEvaluationException`, `ConstraintEvaluationResult`,
+   `ConstraintEngine`), chỉ phụ thuộc `jackson-databind` để parse JSON
+   condition (ADR-002: `==, !=, >, >=, <, <=, in, and, or, not`, leaf qua
+   `{"var": "<alias>.<attributeCode>"}` hoặc literal JSON). Engine chỉ
+   biết "alias string -> bag giá trị thô" (String/BigDecimal/LocalDate/
+   Boolean/Long) — không biết gì về `EntityInstance`/JPA/DB. `app`
+   (`ConstraintInstanceEvaluationService`,
+   `app/src/main/java/com/cpq/app/constraint/`) là tầng glue duy nhất đọc
+   `EntityInstanceAttributeValue` qua repository, map sang `AttributeBag`,
+   rồi gọi engine — đúng ADR-005 (core-* không chạm DB/JPA runtime).
+   **NEEDS-PO-REVIEW**: đây là 1 lựa chọn hẹp hơn mức "tuỳ bạn thiết kế"
+   task cho phép (có thể đã depend core-metamodel cho `EntityInstance`
+   trực tiếp, module graph vẫn không có cycle theo `ModuleLayeringArchTest`
+   hiện tại) — chọn tách rời vì giữ engine dễ unit-test thuần (không cần
+   Testcontainers cho phần logic grammar) và tái dùng được cho rule
+   condition (ADR-002) sau này mà không kéo theo JPA.
+2. **`constraint_instance` lưu thẳng FK tới 2 `entity_instance` cụ thể**
+   (`entity_instance_x_id`/`entity_instance_y_id`, tên generic "x"/"y",
+   không "part"/"vehicle") — theo đúng cách đọc "Done khi" của sprint-2.md
+   ("1 constraint_instance giữa 2 entity_instance tuỳ ý"): 1 row =
+   1 assertion cụ thể giữa 2 instance xác định, có thể evaluate lại bất
+   cứ lúc nào (audit/re-check khi attribute đổi), không phải "điều kiện áp
+   dụng cho mọi cặp X/Y thoả entity_def". Hệ quả: nếu S2-T7 (fitment
+   automotive) cần fitment áp dụng cho *nhiều* cặp Part/Vehicle cùng 1
+   điều kiện (không phải 1 cặp cụ thể), có thể cần 1 kiểu row khác (vd
+   constraint_instance tham chiếu 2 `entity_def` thay vì 2
+   `entity_instance`, rồi configurator tự áp điều kiện cho cặp instance
+   runtime được chọn) — ghi nhận ở đây để S2-T7/S2-T8 cân nhắc, không tự
+   quyết thay task đó.
+3. **Không thêm `constraint_instances[]` vào `PackLoaderService`/
+   `pack.yaml`** — đúng "KHÔNG làm" trong brief; `constraint_def`
+   type="compatibility" và `constraint_instance` test được tạo thẳng qua
+   repository (giống pattern `TestWidget`/`EIS_WIDGET` của S1-T7/S2-T1),
+   không seed qua migration — tránh file `pack.yaml` automotive đang được
+   task khác (S2-T3/T4) sửa song song.
+4. Migration `V5__constraint_instance.sql` — `pack_id`/`pack_version`
+   nullable trên `constraint_instance` (giống 4 bảng *definition*, khác
+   `entity_instance` là NOT NULL) vì lý do (3): chưa có đường nạp qua pack.
+Lý do: Theo đúng scope S2-T2 (sprint-2.md) + E1-02 (docs/backlog.md) +
+ADR-002 (cú pháp condition) + nguyên tắc "agent không đứng chờ" (CLAUDE.md
+mục 6) cho các lựa chọn thiết kế task để ngỏ ("tuỳ bạn thiết kế, miễn
+generic").
+Hệ quả: `core-constraint-engine` thêm `AttributeBag`, `EvaluationContext`,
+`ConditionEvaluationException`, `ConstraintEvaluationResult`,
+`ConstraintEngine` + dependency `jackson-databind`; `core-metamodel` thêm
+`ConstraintInstance`; `app` thêm migration
+`V5__constraint_instance.sql`, package `com.cpq.app.constraint`
+(`ConstraintDefinitionRepository`, `ConstraintInstanceRepository`,
+`ConstraintInstanceEvaluationService`), `EntityInstanceAttributeValueRepository`
+thêm `findByEntityInstance`. Không ảnh hưởng ranh giới core/domain: test
+minh hoạ dùng "Gadget"/"Widget", không từ khoá automotive nào trong code.
+Verify: `./gradlew build` — xem báo cáo S2-T2 cho log đầy đủ.
