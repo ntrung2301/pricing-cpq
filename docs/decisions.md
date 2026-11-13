@@ -1505,3 +1505,40 @@ task này khởi động đã dừng sạch sau verify (`kill`, xác nhận lạ
 `lsof -i :8080 -i :5173` không còn gì); container Postgres/Keycloak dùng
 chung vẫn để chạy (infra dùng chung, không thuộc lifecycle của riêng task
 này).
+
+## D-033 — S2-T13-prereq: expose `entity_def.id` trong `EntityDefinitionSummary` (2026-11-13, backend-dev)
+Bối cảnh: rà soát lỗ hổng thứ 3 trước khi giao S2-T13 (UI giá/waterfall)
+cho frontend-dev. `POST /api/pricing/calculate` (`PriceCalculationRequest`,
+S2-T10/S2-T12) cần `entityDefId: Long` (DB id thật của `entity_def`), nhưng
+`GET /api/entities` (S1-T8, trả `EntityDefinitionSummary`) chỉ có
+`code`/`label`/`version`/`attributes` — không có `id`. Client không có
+cách nào tra `entityDefId` từ `entityDefCode` (ví dụ "Product") để gọi
+pricing API. Việc nhỏ, chặn S2-T13, làm ngay không chờ PO (CLAUDE.md mục 6).
+Quyết định:
+1. Thêm field `Long id` vào `EntityDefinitionSummary`
+   (`core-api/.../entities/EntityDefinitionSummary.java`), đặt đầu tiên:
+   `record EntityDefinitionSummary(Long id, String code, String label, int
+   version, List<AttributeSummary> attributes)`.
+2. Map từ `EntityDefinition.getId()` (JPA entity, đã có sẵn) trong
+   `EntityDefinitionQueryServiceImpl.toSummary` (`app`) — chỗ duy nhất
+   construct `EntityDefinitionSummary`.
+3. **Additive, không đổi hành vi cũ**: không sửa API/DTO nào khác
+   (`PriceCalculationRequest` giữ nguyên), `GET /api/entities` vẫn trả
+   đúng danh sách như trước, chỉ thêm 1 field JSON mới.
+Lý do: theo đúng "agent không đứng chờ" (CLAUDE.md mục 6) — lỗ hổng chặn
+hẳn S2-T13 (frontend không thể lấy `entityDefId` để gọi pricing API), lựa
+chọn hợp lý mặc định duy nhất (thêm field id vào DTO đã có, tái dùng
+`EntityDefinition.getId()` sẵn có) nên làm ngay không chờ PO.
+Hệ quả: `core-api`'s `EntityDefinitionSummary` thêm field `id`; `app`'s
+`EntityDefinitionQueryServiceImpl` truyền thêm `entityDefinition.getId()`.
+Không ảnh hưởng ranh giới core/domain (field generic, không mang tên
+domain cụ thể). `web/` (TS types/consumer của `GET /api/entities`) chưa
+sửa trong task này — để frontend-dev làm cùng S2-T13 khi cần đọc
+`entityDefId` từ response.
+Verify: TDD — sửa `EntitiesEndpointIT` trước (assert `id` khớp
+`EntityDefinition.getId()` thật từ `MetamodelDefinitionService.defineEntity`),
+chạy `./gradlew :app:test --tests
+"com.cpq.app.entities.EntitiesEndpointIT"` thấy RED (`AssertionError` tại
+dòng assert `id`, field chưa tồn tại trong JSON) trước khi sửa code, GREEN
+sau khi sửa (BUILD SUCCESSFUL, 5/5 test pass). `./gradlew build` toàn repo
+— BUILD SUCCESSFUL; `app` 24 test class/85 test, 0 failure, không regress.

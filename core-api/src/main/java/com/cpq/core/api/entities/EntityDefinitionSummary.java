@@ -10,5 +10,5 @@ import java.util.List;
  * entity itself.
  */
 public record EntityDefinitionSummary(
-        String code, String label, int version, List<AttributeSummary> attributes) {
+        Long id, String code, String label, int version, List<AttributeSummary> attributes) {
 }

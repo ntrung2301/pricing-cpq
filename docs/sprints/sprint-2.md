@@ -455,6 +455,7 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   `sprint2-automotive-pricing-seed` → `main`, chưa merge.
   `priceListCode=AUTOMOTIVE-DEFAULT`, `ruleSetCode=AUTOMOTIVE-STANDARD`
   — dùng cho S2-T13 (frontend-dev).
+  + expose entityDefId (D-033).
 
 ### S2-T13 — UI tối thiểu: giá + waterfall
 - **Người phụ trách**: frontend-dev
