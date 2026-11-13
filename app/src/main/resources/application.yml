@@ -1,8 +1,11 @@
-# Local-dev placeholder configuration (S1-T3 skeleton). No running local
-# Postgres is required to build/test this module: tests that touch the
-# database use Testcontainers (see
-# com.cpq.app.ApplicationContextLoadsIT), which override spring.datasource.*
-# at runtime. Real local-dev values will be refined in S1-T7/S1-T6.
+# Local-dev placeholder configuration (S1-T3 skeleton, security added
+# S1-T6). No running local Postgres/Keycloak is required to build/test
+# this module: tests that touch the database use Testcontainers (see
+# com.cpq.app.ApplicationContextLoadsIT), and security tests
+# (com.cpq.app.security.PingEndpointSecurityIT) use spring-security-test's
+# JWT support instead of a real token issuer. Real local-dev values are
+# meant to be used with `docker compose up -d postgres keycloak` (see
+# docker-compose.yml, keycloak/realm-export.json).
 spring:
   application:
     name: pricing-cpq-app
@@ -20,6 +23,21 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # ADR-006: Spring Security oauth2ResourceServer validates JWTs
+          # against this realm's issuer (Keycloak's standard OIDC discovery
+          # document is at <issuer-uri>/.well-known/openid-configuration).
+          # Overridable via KEYCLOAK_ISSUER_URI env var (e.g. a different
+          # realm URL in another environment) instead of hardcoding a value
+          # that only works on this exact local machine; the default here
+          # assumes the local docker-compose Keycloak service, whose host
+          # port is mapped to 8089 (not Keycloak's usual 8080) to avoid
+          # local port clashes with this machine's other 8080 services and
+          # with server.port below (see docs/decisions.md).
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8089/realms/cpq}
 
 server:
   port: 8080

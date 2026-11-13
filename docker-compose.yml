@@ -17,5 +17,29 @@ services:
       timeout: 5s
       retries: 10
 
+  # ADR-006: local-dev Keycloak for OIDC login + RBAC (S1-T6). `start-dev`
+  # is fine for local dev (not production-hardened). Realm/client/roles/
+  # sample users are pre-loaded from keycloak/realm-export.json via
+  # `--import-realm` (Keycloak's standard realm-import mechanism) so no
+  # manual setup through the admin console is needed.
+  #
+  # Host port 8089 (not Keycloak's usual 8080) is intentional: this
+  # machine already has an unrelated kafka-ui container bound to host
+  # 8080, and this app's own server.port (application.yml) is also 8080
+  # — mapping Keycloak to 8089:8080 avoids both collisions without
+  # touching either of those other defaults. See docs/decisions.md.
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      # Local dev only — not a real secret, never used outside this
+      # developer's own machine/container.
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8089:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+
 volumes:
   pricing-cpq-postgres-data:
