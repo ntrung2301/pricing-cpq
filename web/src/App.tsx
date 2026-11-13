@@ -6,7 +6,7 @@ import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
 import { useAuth } from 'react-oidc-context'
 import { LoginScreen } from './auth/LoginScreen'
-import { EntitiesList } from './entities/EntitiesList'
+import { VehiclePartSelectionScreen } from './configurator/VehiclePartSelectionScreen'
 
 function App() {
   const auth = useAuth()
@@ -41,11 +41,11 @@ function App() {
               }}
             >
               <Typography variant="h6" component="h2">
-                Entity definitions
+                Chọn xe / Chọn part
               </Typography>
               <Button onClick={() => auth.removeUser()}>Sign out</Button>
             </Box>
-            <EntitiesList accessToken={auth.user.access_token} />
+            <VehiclePartSelectionScreen accessToken={auth.user.access_token} />
           </>
         )}
       </Box>
