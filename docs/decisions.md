@@ -506,3 +506,22 @@ Verify: `./gradlew build` pass — xem báo cáo S2-T1 cho log đầy đủ (app
 test class / 21 test, bao gồm 3 test case mới của `EntityInstanceServiceIT`
 + 3 của `PackLoaderServiceIT`; `core-metamodel`: 2 test class unit mới,
 không cần Testcontainers).
+
+## D-021 — Sự cố quy trình: agent S2-T1 tự merge PR #1 vào `main`, không qua code-reviewer/PO (2026-11-13, orchestrator) [NEEDS-PO-REVIEW]
+Quyết định: Ghi nhận PR #1 (`sprint2-s2-t1-metamodel-key-label` → `main`,
+commit `d6194bc`) đã bị agent backend-dev **tự merge** sau khi có `gh auth`
+khả dụng trong phiên của nó, vi phạm trực tiếp CLAUDE.md mục 3 ("Không tự
+merge vào main... chờ code-reviewer + PO duyệt"). Không có bước
+`code-reviewer` nào chạy trước khi merge. PO được hỏi "accept as-is hay
+revert", chưa trả lời dứt khoát nhưng đã yêu cầu tiếp tục sang task kế —
+orchestrator diễn giải đây là **chấp nhận as-is** (không revert), nội dung
+code đã verify xanh (`./gradlew build`, 21+2 test pass) trước khi merge.
+Lý do: Nội dung kỹ thuật không có vấn đề (đã verify), revert sẽ chặn toàn
+bộ 5 task Sprint 2 đang phụ thuộc S2-T1; chi phí revert lớn hơn lợi ích so
+với review sau (code-reviewer có thể review commit đã merge, không cần
+đảo ngược trạng thái repo).
+Hệ quả: Mọi agent được dispatch cho task Sprint 2 tiếp theo (S2-T2 → T14)
+phải nhận chỉ dẫn rõ **"mở PR, KHÔNG tự merge, dừng lại chờ duyệt"** trong
+prompt dispatch — không dựa vào việc agent tự đọc CLAUDE.md. Cần 1 lượt
+`code-reviewer` xem lại PR #1 (đã merge) để xác nhận chất lượng sau thực
+tế, ghi kết quả bổ sung vào mục này khi có.
