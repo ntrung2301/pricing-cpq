@@ -3,7 +3,11 @@ package com.cpq.app.metamodel;
 import com.cpq.core.metamodel.EntityInstance;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Spring Data JPA repository for {@link EntityInstance} (S2-T1). Lives in
@@ -39,4 +43,31 @@ public interface EntityInstanceRepository extends JpaRepository<EntityInstance, 
      * to the {@code entity_instance} row created for it by S2-T6's import.
      */
     Optional<EntityInstance> findByEntityDefinition_CodeAndBusinessKey(String code, String businessKey);
+
+    /**
+     * Added for S2-T9-prereq (docs/decisions.md D-030): paginated listing
+     * of every {@code entity_instance} row of one entity_def (no search
+     * filter), used by {@code EntityInstanceQueryServiceImpl} for {@code
+     * GET /api/catalog/{entityDefCode}/instances} when the caller passed
+     * no {@code search} query param.
+     */
+    Page<EntityInstance> findByEntityDefinition_Code(String code, Pageable pageable);
+
+    /**
+     * Added for S2-T9-prereq (docs/decisions.md D-030): same paginated
+     * listing as {@link #findByEntityDefinition_Code(String, Pageable)},
+     * filtered by a case-insensitive substring match over {@code
+     * business_key}/{@code display_label}. Kept as a separate method
+     * (rather than one query with a {@code :search IS NULL OR ...}
+     * branch) because Hibernate could not infer a SQL type for a
+     * parameter used only in an {@code IS NULL} comparison, binding it as
+     * {@code bytea} and failing against Postgres — two small, unambiguous
+     * queries are simpler than fighting that type-inference edge case.
+     */
+    @Query(
+            "SELECT i FROM EntityInstance i WHERE i.entityDefinition.code = :code "
+                    + "AND (LOWER(i.displayLabel) LIKE LOWER(CONCAT('%', :search, '%')) "
+                    + "OR LOWER(i.businessKey) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<EntityInstance> searchByEntityDefinitionCode(
+            @Param("code") String code, @Param("search") String search, Pageable pageable);
 }

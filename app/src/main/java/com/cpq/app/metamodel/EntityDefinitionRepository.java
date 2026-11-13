@@ -36,4 +36,14 @@ public interface EntityDefinitionRepository extends JpaRepository<EntityDefiniti
      */
     @Query("SELECT DISTINCT e FROM EntityDefinition e LEFT JOIN FETCH e.attributes ORDER BY e.code")
     List<EntityDefinition> findAllWithAttributes();
+
+    /**
+     * Added for S2-T9-prereq (docs/decisions.md D-030): {@code
+     * EntityInstanceQueryServiceImpl} needs a cheap existence check for
+     * {@code GET /api/catalog/{entityDefCode}/instances}'s 404 branch
+     * (no attribute fetch-join needed, unlike {@link #findByCodeWithAttributes}
+     * — this endpoint never returns entity_def metadata, only
+     * entity_instance rows).
+     */
+    boolean existsByCode(String code);
 }
