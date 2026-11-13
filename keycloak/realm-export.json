@@ -1,0 +1,87 @@
+{
+  "realm": "cpq",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "sales",
+        "description": "Sales rep - generic CPQ core role, ADR-006/E5-02 (maps to Spring authority ROLE_SALES)"
+      },
+      {
+        "name": "sales_manager",
+        "description": "Sales manager - generic CPQ core role, ADR-006/E5-02 (maps to Spring authority ROLE_SALES_MANAGER)"
+      },
+      {
+        "name": "pricing_admin",
+        "description": "Pricing admin - generic CPQ core role, ADR-006/E5-02 (maps to Spring authority ROLE_PRICING_ADMIN)"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "cpq-backend",
+      "name": "CPQ backend (Spring Security OAuth2 resource server, ADR-006)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://localhost:*", "http://localhost:8091/*"],
+      "webOrigins": ["http://localhost:*"]
+    }
+  ],
+  "users": [
+    {
+      "username": "sales-rep@example.com",
+      "email": "sales-rep@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Sales",
+      "lastName": "Rep",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sales-rep-local-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["sales"]
+    },
+    {
+      "username": "sales-manager@example.com",
+      "email": "sales-manager@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Sales",
+      "lastName": "Manager",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sales-manager-local-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["sales_manager"]
+    },
+    {
+      "username": "pricing-admin@example.com",
+      "email": "pricing-admin@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Pricing",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pricing-admin-local-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["pricing_admin"]
+    }
+  ]
+}
