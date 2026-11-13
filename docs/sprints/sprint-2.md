@@ -252,6 +252,30 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 - **Done khi**: Cùng Product, Customer khác tier → giá khác đúng theo rule;
   Customer có hợp đồng riêng → giá hợp đồng override tier, thấy đúng nhãn
   trong waterfall.
+- **Trạng thái**: Done (2026-11-13, backend-dev). `PriceCalculationRequest`
+  (`core-api`) thêm 2 field tuỳ chọn `customerInstanceId`/
+  `contractOverridePrice` (constructor cũ giữ nguyên qua overload tương
+  thích ngược). `PricingCalculationServiceImpl` (`app`) tự đọc attribute
+  `tier` của entity_instance qua `EntityInstanceRepository`/
+  `EntityInstanceAttributeValueRepository` (cùng pattern S2-T2) khi có
+  `customerInstanceId`, set vào `attributes.tier` trước khi chạy
+  `RuleEngine` — `core-pricing` không biết "tier"/"Customer" là gì. Rule
+  mẫu phân tầng (OEM -15%/Distributor -10%/Dealer 0%) viết JSON DSL; rule
+  "giá hợp đồng riêng" ở stage `override` **bắt buộc viết Groovy SCRIPT**
+  (không phải tuỳ chọn) vì `DslRuleExecutor`'s `set-price` chỉ nhận giá
+  trị literal, không tham chiếu được biến runtime — đọc
+  `attributes.contractOverridePrice` (field request mới, đơn giản hoá
+  thay vì thêm attribute Customer — lý do kỹ thuật + NEEDS-PO-REVIEW chi
+  tiết ở D-028). Test mới `TierBasedPricingServiceIT` (2 test,
+  Testcontainers): tier khác nhau → final amount khác nhau (85.00 OEM vs
+  100.00 Dealer); contract override thắng tier discount (77.77, bất kể
+  tier), waterfall step có label chứa "contract override", tổng delta =
+  final amount. Chi tiết quyết định: D-028 (`docs/decisions.md`). Verify:
+  `./gradlew build` — BUILD SUCCESSFUL toàn repo; `app` 16 test class/45
+  test 0 fail (gồm `TierBasedPricingServiceIT` 2/2 mới, không regress
+  `PricingCalculationServiceIT`/`PricingEndpointIT` của S2-T10); `core-
+  pricing` 7 class/38 test 0 fail (không sửa, không regress). PR:
+  `sprint2-s2-t12-tier-pricing` → `main`, chưa merge.
 
 ### S2-T13 — UI tối thiểu: giá + waterfall
 - **Người phụ trách**: frontend-dev
