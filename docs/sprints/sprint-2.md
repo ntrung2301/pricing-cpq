@@ -94,6 +94,24 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 - **Done khi**: Import CSV đúng cột → tạo đúng entity_instance kèm
   business_key; CSV thiếu cột bắt buộc hoặc sai tên cột → báo lỗi rõ theo
   dòng, job vẫn hoàn tất với danh sách lỗi, không crash.
+- **Trạng thái**: Done (2026-11-13, backend-dev). Migration
+  `V6__catalog_import.sql` (`import_job` + `import_job_row_error`).
+  `CatalogCsvParser` (`core-catalog`, thuần Java, không Spring/JPA) đối
+  chiếu header CSV với `attribute_def.code` (D-005); `CatalogImportService`
+  (port, `core-api`) + `CatalogImportServiceImpl`/`CatalogRowWriter` (impl,
+  `app`) gọi lại `EntityInstanceService` (S2-T1) cho mỗi dòng hợp lệ, mỗi
+  dòng là 1 transaction riêng (`CatalogRowWriter.writeRow`) để 1 dòng lỗi
+  không ảnh hưởng dòng khác. `POST /api/catalog/{entityDefCode}/import`
+  (multipart CSV), RBAC `PRICING_ADMIN`. Test tự tạo entity_def
+  "TestWidget" riêng (không đụng Product/Customer của S2-T3/S2-T4). Chi
+  tiết quyết định (quy ước `row_number`, HTTP status FAILED/COMPLETED,
+  `packId` fallback "manual-import", ranh giới transaction theo dòng):
+  D-022 (`docs/decisions.md`). Verify: `./gradlew build` — BUILD
+  SUCCESSFUL; `core-catalog` 5/5 test (`CatalogCsvParserTest`, unit, không
+  Testcontainers); `app` 30/30 test pass (bao gồm `CatalogImportServiceImplIT`
+  6/6, `ImportEndpointSecurityIT` 3/3 RBAC, toàn bộ test Sprint 1/S2-T1 vẫn
+  pass, `ModuleLayeringArchTest` 2/2). PR:
+  `sprint2-s2-t5-catalog-import` → `main`, chưa merge.
 
 ### S2-T6 — Seed demo: import Product + Customer mẫu
 - **Người phụ trách**: backend-dev (hoặc qa-engineer)
