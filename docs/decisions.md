@@ -883,3 +883,82 @@ determinism 10 lần) + `PricingEndpointIT` (5 test, MockMvc + JWT giả lập
 qua `KeycloakRealmRoleConverter`, 401 chưa đăng nhập + 3 role đều gọi
 được) — toàn bộ test cũ Sprint 1/S2-T1 vẫn pass (tổng app: 11 test class/
 30 test, core-metamodel 2 class, core-security 2 class — tất cả 0 fail).
+
+## D-026 — S2-T6: seed demo data Product/Customer thay SampleWidget (2026-11-13, backend-dev)
+Quyết định:
+1. **2 file CSV** `app/src/main/resources/demo-data/automotive/
+   products.csv` (30 dòng Product) và `.../customers.csv` (8 dòng
+   Customer, 2 mỗi tier OEM/DISTRIBUTOR/DEALER/WORKSHOP). Header khớp
+   đúng `attribute_def.code` của `pack.yaml` automotive (D-005). 4 cặp
+   SKU đặt tên gợi ý supersession cho S2-T7 (`BRK-PAD-OLD-001`/
+   `BRK-PAD-NEW-001`, `BRK-PAD-OLD-002`/`BRK-PAD-NEW-002`,
+   `BRK-ROTOR-OLD-001`/`BRK-ROTOR-NEW-001`, `OIL-FLT-OLD-010`/
+   `OIL-FLT-NEW-010`, `ALT-OLD-500`/`ALT-NEW-500`) — **không** tự tạo
+   `relationship_instance` `supersedes` ở task này: quan hệ supersession
+   là dữ liệu thuộc S2-T7 (fitment/supersession), CSV của S2-T6 chỉ chứa
+   field của entity Product, việc gán cặp nào supersede cặp nào là một
+   quyết định/dữ liệu riêng để S2-T7 làm cùng lúc với constraint fitment
+   (tránh làm nửa việc của task khác trước khi context đó được thiết kế).
+2. **`DemoDataSeedRunner`** (`app/src/main/java/com/cpq/app/demo/`,
+   `ApplicationRunner` mới, không sửa `PackLoaderService`/
+   `CatalogImportService`/`CatalogRowWriter`) gọi lại
+   `PackLoaderService.loadAllPacksFromClasspath()` rồi
+   `CatalogImportService.importCsv(...)` có sẵn (S2-T5/D-022) — không
+   viết lại logic parse/import.
+3. **Thứ tự chạy so với `PackLoaderService`**: cả hai đều là
+   `ApplicationRunner`, Spring Boot **không** đảm bảo thứ tự gọi `run()`
+   giữa 2 runner không khai báo `@Order`/`Ordered`, và nhiệm vụ này
+   không được phép sửa `PackLoaderService` để thêm `@Order`. Giải pháp:
+   `DemoDataSeedRunner.run()` tự gọi lại
+   `packLoaderService.loadAllPacksFromClasspath()` trước khi import —
+   upsert đã idempotent (S2-T1) nên gọi thêm lần nữa khi Spring cũng tự
+   gọi `PackLoaderService` là vô hại, và đảm bảo chắc chắn `entity_def`
+   Product/Customer tồn tại trước khi import, bất kể Spring chọn thứ tự
+   nào. NEEDS-PO-REVIEW (nhẹ): nếu sau này có nhiều `ApplicationRunner`
+   phụ thuộc nhau hơn, nên cân nhắc thêm `@Order` tập trung một chỗ thay
+   vì mỗi runner tự gọi lại runner khác.
+4. **Idempotent khi restart**: kiểm tra trước — nếu
+   `EntityInstanceRepository.findByEntityDefinition_Code(code)` đã có
+   dòng nào cho `Product`/`Customer` thì bỏ qua toàn bộ CSV đó, không
+   gọi `importCsv` lại (tránh tạo `import_job` toàn lỗi "duplicate
+   business key" ở mỗi lần khởi động — cơ chế unique constraint của
+   S2-T1 vẫn là nguồn sự thật, chỉ dùng như kiểm tra tồn tại, không dùng
+   làm cơ chế bắt lỗi chính). Đánh đổi đã ghi nhận (NEEDS-PO-REVIEW nhẹ):
+   nếu lần chạy trước crash giữa chừng (import 1 phần), lần restart sau
+   sẽ không "bù" phần còn thiếu vì chỉ cần có ≥1 dòng là coi như đã seed
+   đủ — chấp nhận được ở phạm vi demo seed.
+5. **RBAC khi gọi `CatalogImportService.importCsv` từ `ApplicationRunner`**:
+   method này có `@PreAuthorize("hasRole('PRICING_ADMIN')")`
+   (ADR-006, `@EnableMethodSecurity` áp dụng mọi caller trong process,
+   không chỉ HTTP) — lúc khởi động app không có request/JWT nào, nên
+   không có `SecurityContext` sẵn. `DemoDataSeedRunner` tự tạo 1
+   `Authentication` tổng hợp (`UsernamePasswordAuthenticationToken`,
+   authority `ROLE_PRICING_ADMIN`) chỉ trong lúc gọi `importCsv`, rồi
+   khôi phục lại context cũ ngay sau đó — đây là caller đầu tiên trong
+   codebase gọi 1 service bị `@PreAuthorize` chặn mà không phải HTTP
+   request hay test (`@WithMockUser`). NEEDS-PO-REVIEW: nếu sau này có
+   thêm job nền khác cũng cần bỏ qua RBAC lúc khởi động, nên cân nhắc 1
+   cơ chế "system principal" dùng chung thay vì mỗi nơi tự tạo
+   `Authentication` riêng.
+6. **Không xoá `V3__seed_sample_entity_definition.sql`** (migration
+   `SampleWidget`, D-018 mục 3): sửa/xoá 1 migration Flyway đã apply là
+   rủi ro (checksum, môi trường đã chạy) — theo đúng chỉ dẫn task, chỉ
+   ghi NEEDS-PO-REVIEW, không tự xoá. `SampleWidget` không còn được bất
+   kỳ runner/test demo nào phụ thuộc kể từ task này.
+Lý do: scope S2-T6 (`docs/sprints/sprint-2.md`), D-005/D-022 (tái dùng
+framework import có sẵn), nguyên tắc "agent không đứng chờ" (CLAUDE.md
+mục 6) cho các lựa chọn không có tiền lệ sẵn (thứ tự runner, idempotency
+check, RBAC trong `ApplicationRunner`).
+Hệ quả: `app` thêm package `com.cpq.app.demo`
+(`DemoDataSeedRunner`) + 2 file CSV
+`app/src/main/resources/demo-data/automotive/{products,customers}.csv`;
+test mới `app/src/test/java/com/cpq/app/demo/DemoDataSeedRunnerIT.java`
+(2 test, Testcontainers Postgres thật — seed lúc `@SpringBootTest` khởi
+động context thật, không mock — + gọi lại `run()` lần 2 giả lập restart).
+Không sửa `pack.yaml`/`PackLoaderService`/`CatalogImportService`/
+`CatalogRowWriter`. Không ảnh hưởng ranh giới core/domain: toàn bộ thay
+đổi là dữ liệu CSV + 1 class orchestration gọi lại service có sẵn, không
+thêm business logic domain-specific vào engine lõi.
+Verify: `./gradlew :app:test --tests "com.cpq.app.demo.*"` — BUILD
+SUCCESSFUL, 2/2 test pass; `./gradlew build` (toàn repo, kết quả đầy đủ
+trong báo cáo task).

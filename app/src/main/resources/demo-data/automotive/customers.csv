@@ -1,0 +1,9 @@
+customer_id,name,tier,contract_code,contact_email,contact_phone
+CUST-OEM-001,Acme Motors OEM Division,OEM,CT-OEM-1001,procurement@acmemotors.example,+1-555-0101
+CUST-OEM-002,Northfield Vehicle Group,OEM,CT-OEM-1002,purchasing@northfieldvg.example,+1-555-0102
+CUST-DIST-001,Pacific Auto Parts Distribution,DISTRIBUTOR,CT-DIST-2001,orders@pacificautoparts.example,+1-555-0201
+CUST-DIST-002,Continental Parts Distributors,DISTRIBUTOR,CT-DIST-2002,sales@continentalparts.example,+1-555-0202
+CUST-DLR-001,Downtown Auto Dealership,DEALER,CT-DLR-3001,parts@downtownauto.example,+1-555-0301
+CUST-DLR-002,Riverside Motors Dealership,DEALER,,service@riversidemotors.example,+1-555-0302
+CUST-WS-001,Mikes Garage Workshop,WORKSHOP,,mike@mikesgarage.example,+1-555-0401
+CUST-WS-002,QuickFix Auto Workshop,WORKSHOP,,contact@quickfixauto.example,+1-555-0402

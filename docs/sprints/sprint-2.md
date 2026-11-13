@@ -160,13 +160,41 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   `sprint2-s2-t5-catalog-import` → `main`, chưa merge.
 
 ### S2-T6 — Seed demo: import Product + Customer mẫu
-- **Người phụ trách**: backend-dev (hoặc qa-engineer)
+- **Người phụ trách**: backend-dev
 - **Phụ thuộc**: S2-T3, S2-T4, S2-T5
 - **Việc làm**: File CSV demo — vài chục Product (đủ để test supersession +
   fitment ở S2-T7) và Customer (ít nhất 1 mỗi tier) — import qua S2-T5,
   dùng làm dữ liệu demo thay `SampleWidget` (D-018 mục 3, nay bỏ).
 - **Done khi**: Dữ liệu import thấy được qua API, dùng được cho S2-T9/S2-T12
   demo, không còn phụ thuộc `SampleWidget`.
+- **Trạng thái**: Done (2026-11-13, backend-dev). 2 file CSV
+  `app/src/main/resources/demo-data/automotive/{products,customers}.csv`
+  (30 Product — gồm 5 cặp SKU đặt tên gợi ý supersession cho S2-T7, ví dụ
+  `BRK-PAD-OLD-001`/`BRK-PAD-NEW-001`; 8 Customer, 2 mỗi tier OEM/
+  DISTRIBUTOR/DEALER/WORKSHOP). `DemoDataSeedRunner`
+  (`app/src/main/java/com/cpq/app/demo/`, `ApplicationRunner` mới) gọi
+  lại `PackLoaderService.loadAllPacksFromClasspath()` (đảm bảo entity_def
+  Product/Customer tồn tại, bất kể thứ tự runner) rồi
+  `CatalogImportService.importCsv(...)` có sẵn (S2-T5) cho mỗi file —
+  không viết lại logic import, không sửa `pack.yaml`/`PackLoaderService`/
+  `CatalogImportService`/`CatalogRowWriter`. Idempotent: kiểm tra
+  `EntityInstanceRepository.findByEntityDefinition_Code(code)` trước,
+  bỏ qua nếu đã có dữ liệu (restart không tạo trùng, không crash). RBAC:
+  method `importCsv` yêu cầu `PRICING_ADMIN` — runner tự tạo
+  `Authentication` tổng hợp chỉ trong lúc gọi (không có JWT lúc khởi
+  động). Chi tiết quyết định (thứ tự runner, idempotency check, RBAC
+  trong `ApplicationRunner`, không xoá migration `V3` SampleWidget): D-026
+  (`docs/decisions.md`). Test mới `DemoDataSeedRunnerIT`
+  (`app/src/test/java/com/cpq/app/demo/`, Testcontainers Postgres thật,
+  `@SpringBootTest` khởi động app thật — seed chạy tự động lúc context
+  start, không mock) 2/2 test pass: (1) sau khởi động, Product ≥20 dòng
+  (chứa đủ cặp supersession), Customer ≥4 dòng đủ 4 tier; (2) gọi lại
+  `run()` lần 2 giả lập restart → không lỗi, số dòng không đổi. Verify:
+  `./gradlew :app:test --tests "com.cpq.app.demo.*"` — BUILD SUCCESSFUL,
+  2/2 pass; `./gradlew build` toàn repo — BUILD SUCCESSFUL (chi tiết số
+  test trong báo cáo task). `SampleWidget`/migration `V3` **không xoá**
+  (rủi ro sửa migration đã apply), nhưng không còn runner/test demo nào
+  phụ thuộc. PR: `sprint2-s2-t6-seed-demo-data` → `main`, chưa merge.
 
 ### S2-T7 — Fitment automotive: compatibility + supersession/kit
 - **Người phụ trách**: backend-dev
