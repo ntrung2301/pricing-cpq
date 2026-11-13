@@ -218,3 +218,31 @@ dễ hơn), cần 1 task riêng thay thế component library ở `web/`, review 
 ảnh hưởng tới các component đã viết. PO có thể override quyết định này bất
 kỳ lúc nào; nếu không phản hồi trong 1 sprint, coi như chấp nhận default
 theo quy ước CLAUDE.md.
+
+## D-016 — S1-T3: repo skeleton Gradle 8 module + Java 21 qua toolchain auto-provisioning (2026-11-13, backend-dev)
+Quyết định: Dựng skeleton Gradle multi-project (`pricing-cpq`) đúng 8 module
+ADR-005 (`core-metamodel, core-constraint-engine, core-pricing, core-catalog,
+core-quote, core-security, core-api, app`), không có module `pack-*`
+(D-013). Convention plugin `cpq.java-conventions` (trong `build-logic`) áp
+Java 21 toolchain + Spring Boot 3.3.5 BOM (`io.spring.dependency-management`)
+cho mọi module; chỉ `app` bật `bootJar`/Flyway/Postgres driver, các
+`core-*` còn lại đứng độc lập (chưa cần phụ thuộc lẫn nhau ở giai đoạn
+skeleton). `org.gradle.toolchains.foojay-resolver-convention` phải dùng
+version **1.0.0** (không phải 0.8.0 như gợi ý ban đầu) — bản 0.8.0 và 0.10.0
+đều lỗi `NoSuchFieldError: IBM_SEMERU` khi chạy trên Gradle 9.8.2 (máy có
+sẵn), do xung đột với class toolchain nội bộ của bản Gradle này; 1.0.0 chạy
+được, tự tải JDK 21 qua mạng (xác nhận compile/test chạy bằng
+"Java 21.0.13" trong output test, không phải JDK 17 Corretto có sẵn trên
+máy) — không cần nhánh fallback JDK 17.
+Lý do: Theo đúng yêu cầu CLAUDE.md/ADR-005 (Java 21) mà không cần cài JDK 21
+thủ công; thử tải toolchain trước khi coi là "sandbox chặn mạng" theo chỉ
+dẫn task — mạng thực tế hoạt động được.
+Hệ quả: `ModuleLayeringArchTest` (ArchUnit, trong `app/src/test/java/com/
+cpq/app/arch/`) viết theo TDD — xác minh bằng cách tạm cho `core-quote` phụ
+thuộc `core-catalog` (thêm dependency + 1 class implement `ModuleMarker`
+của catalog), chạy test thấy `coreModulesMustNotDependOnEachOther()` fail
+đúng như kỳ vọng, sau đó revert lại thấy pass. `ApplicationContextLoadsIT`
+(Testcontainers Postgres) xác nhận Flyway chạy `V1__init.sql` thật trên
+Postgres container, không cần Postgres local. `./gradlew build` pass đầy
+đủ (44 task, `BUILD SUCCESSFUL`). Không có hệ quả tới ranh giới core/
+domain (không file nào liên quan domain automotive).
