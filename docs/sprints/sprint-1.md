@@ -31,11 +31,15 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 - **Người phụ trách**: backend-dev
 - **Phụ thuộc**: S1-T1 (cần ADR-005 modular monolith structure, ADR-001
   metamodel để đặt tên module đúng)
-- **Việc làm**: Tạo module Maven/Gradle theo cấu trúc ADR-005 (vd
-  `core-metamodel`, `core-pricing`, `core-quote`, `pack-automotive`), cấu
-  hình Spring Boot 3, Java 21, Flyway, kết nối Postgres local.
-- **Done khi**: `./build` chạy pass với project rỗng nhưng có module boundary
-  đúng; có 1 ArchUnit test placeholder xác nhận boundary.
+- **Việc làm**: Tạo module Gradle theo cấu trúc ADR-005 (`core-metamodel`,
+  `core-constraint-engine`, `core-pricing`, `core-catalog`, `core-quote`,
+  `core-security`, `core-api`, `app` — **không có module `pack-*`**, theo
+  D-013 domain là config trong `app/src/main/resources/config/packs/`, không
+  phải module riêng), cấu hình Spring Boot 3, Java 21, Flyway, kết nối
+  Postgres local.
+- **Done khi**: `./gradlew build` chạy pass với project rỗng nhưng đủ module
+  trên; có 1 ArchUnit test placeholder xác nhận chỉ `app` phụ thuộc mọi
+  `core-*` (vệ sinh layering, không phải chặn domain keyword — xem D-013).
 
 ### S1-T4 — Repo skeleton React (Vite + TS)
 - **Người phụ trách**: frontend-dev
@@ -50,9 +54,12 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 - **Người phụ trách**: devops
 - **Phụ thuộc**: S1-T3, S1-T4 (cần có gì để build)
 - **Việc làm**: Workflow build+test cho cả backend (JUnit+ArchUnit+
-  Testcontainers) và frontend (Vitest). ArchUnit fail = CI fail.
-- **Done khi**: PR mẫu chạy CI xanh, và 1 PR cố ý vi phạm boundary (test thử)
-  làm CI đỏ đúng như kỳ vọng.
+  Testcontainers) và frontend (Vitest). ArchUnit ở đây chỉ kiểm vệ sinh
+  layering module (ADR-005: chỉ `app` phụ thuộc mọi `core-*`), không còn
+  mục đích chặn domain keyword (D-013). ArchUnit fail = CI fail.
+- **Done khi**: PR mẫu chạy CI xanh, và 1 PR cố ý vi phạm layering (ví dụ
+  `core-quote` phụ thuộc trực tiếp `core-catalog` không qua interface) làm
+  CI đỏ đúng như kỳ vọng.
 
 ### S1-T6 — Auth: Keycloak local + OIDC login cơ bản
 - **Người phụ trách**: devops (hạ tầng) + backend-dev (Spring Security

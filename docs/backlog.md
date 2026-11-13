@@ -17,9 +17,12 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
   phải class Java cứng. Domain pack định nghĩa entity (ví dụ "Part") bằng
   config, không bằng code.
 - **Acceptance criteria**:
-  - Tạo được 1 entity mới (ví dụ "TestWidget") hoàn toàn qua config, không
-    sửa code lõi, hiển thị được qua API.
-  - ArchUnit test xác nhận không entity cụ thể nào hardcode trong core.
+  - Tạo được 1 entity mới (ví dụ "TestWidget") hoàn toàn qua config (file
+    `pack.yaml`), không sửa code Java nào trong engine, hiển thị được qua
+    API.
+  - Test tích hợp xác nhận: thêm entity mới không cần thêm/sửa class Java
+    nào (theo D-013, không còn ArchUnit quét keyword domain — xác minh
+    bằng test tích hợp + review diff, xem `docs/adr/0005-modular-monolith-structure.md`).
 
 ### E1-02 [core] (M) Constraint-as-data, bao gồm constraint loại "compatibility"
 - **Mô tả**: Constraint engine generic; "fitment theo xe" sẽ là 1 instance

@@ -21,8 +21,9 @@
 Một task được coi là "ready" khi:
 - Có mô tả rõ, acceptance criteria cụ thể (không mơ hồ).
 - Phụ thuộc (nếu có) đã được xác định rõ trong `docs/sprints/sprint-N.md`.
-- Không vi phạm ranh giới core/pack theo thiết kế đã biết (nếu task mới lộ
-  ra vi phạm, quay lại architect trước khi code).
+- Không đòi hỏi viết business logic domain-specific vào engine lõi theo
+  thiết kế đã biết (nếu task mới lộ ra nhu cầu này, quay lại architect
+  trước khi code — xem D-013).
 - Có agent phù hợp nhận (đúng vai trò trong `.claude/agents/`).
 
 ## Definition of Done (task)
@@ -31,7 +32,10 @@ Một task được coi là "ready" khi:
   (`superpowers:verification-before-completion`), không suy đoán.
 - Code review xong (ít nhất 1 lượt code-reviewer), finding mức
   Cần-sửa-trước-khi-merge đã xử lý.
-- Không vi phạm ranh giới core/pack (ArchUnit pass nếu áp dụng).
+- Không viết business logic domain-specific (automotive hay ngành khác)
+  trong engine lõi — domain luôn là dữ liệu/config (xem CLAUDE.md, D-013).
+  ArchUnit layering (ADR-005) pass nếu áp dụng; không còn gate quét domain
+  keyword.
 - Quyết định không hiển nhiên đã ghi vào `docs/decisions.md`.
 - PR mở, chưa tự merge vào `main`.
 
