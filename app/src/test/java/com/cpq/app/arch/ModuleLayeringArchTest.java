@@ -23,13 +23,16 @@ import org.junit.jupiter.api.Test;
  * all of them):
  *
  * <ol>
- *   <li>{@link #coreModulesMustNotDependOnEachOther()} — at this skeleton
- *       stage, no {@code core-*} module needs another yet (see each
- *       module's build.gradle.kts comment), so none may import another.
- *       As real cross-module dependencies are introduced in later
- *       sprints, this rule will need to allow specific, intentional
- *       edges (e.g. via {@code slices().should().beFreeOfCycles()}
- *       instead) — until then it stays strict.</li>
+ *   <li>{@link #coreModulesMustBeFreeOfCycles()} — core-* modules may now
+ *       depend on each other (S1-T6 introduced the first real edge,
+ *       {@code core-api -> core-security}, needed for
+ *       {@code @PreAuthorize} per ADR-006), but never in a cycle: a
+ *       one-directional dependency graph between core-* modules is fine,
+ *       two modules depending on each other is not. This replaces the
+ *       original, stricter {@code notDependOnEachOther()} check (which
+ *       only held while no {@code core-*} module needed another), per
+ *       this class's own original plan to relax it "as real cross-module
+ *       dependencies are introduced in later sprints".</li>
  *   <li>{@link #coreModulesMustNotDependOnApp()} — a core-* module must
  *       never depend back on the composition root.</li>
  * </ol>
@@ -50,9 +53,8 @@ class ModuleLayeringArchTest {
     }
 
     @Test
-    void coreModulesMustNotDependOnEachOther() {
-        ArchRule rule =
-                slices().matching("com.cpq.core.(*)..").should().notDependOnEachOther();
+    void coreModulesMustBeFreeOfCycles() {
+        ArchRule rule = slices().matching("com.cpq.core.(*)..").should().beFreeOfCycles();
         rule.check(classes);
     }
 

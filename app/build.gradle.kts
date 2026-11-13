@@ -40,4 +40,7 @@ dependencies {
     testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
+    // MockMvc + SecurityMockMvcRequestPostProcessors.jwt() for S1-T6's
+    // PingEndpointSecurityIT (401/403/200 without a running Keycloak).
+    testImplementation("org.springframework.security:spring-security-test")
 }

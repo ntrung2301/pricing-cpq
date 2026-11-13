@@ -246,3 +246,60 @@ của catalog), chạy test thấy `coreModulesMustNotDependOnEachOther()` fail
 Postgres container, không cần Postgres local. `./gradlew build` pass đầy
 đủ (44 task, `BUILD SUCCESSFUL`). Không có hệ quả tới ranh giới core/
 domain (không file nào liên quan domain automotive).
+
+## D-017 — S1-T6: Keycloak local-dev + Spring Security OIDC resource server, host port 8089, core-api→core-security edge (2026-11-13, devops+backend-dev)
+Quyết định: Thêm service `keycloak` vào `docker-compose.yml`
+(`quay.io/keycloak/keycloak:25.0`, `start-dev --import-realm`), map host
+port **8089:8080** (không dùng 8080 mặc định của Keycloak) vì máy dev đã có
+container `kafka-ui` khác chiếm port 8080, và `server.port` mặc định của
+app cũng là 8080 — tránh cả 2 xung đột mà không đổi default nào đã commit.
+Realm export `keycloak/realm-export.json`: realm `cpq`, client public
+`cpq-backend` (`directAccessGrantsEnabled: true` để dùng Resource Owner
+Password Credentials grant cho verify thủ công), đúng 3 realm role
+`sales`/`sales_manager`/`pricing_admin`, 1 user mẫu mỗi role
+(`sales-rep@example.com`, `sales-manager@example.com`,
+`pricing-admin@example.com`). Spring Security: `core-security` khai báo
+`spring-boot-starter-security` + `spring-boot-starter-oauth2-resource-server`
+dạng `api` (để app/core-api dùng lại type Jwt/GrantedAuthority mà không phải
+tự thêm dependency); `CpqRole` (enum) + `KeycloakRealmRoleConverter`
+(bridge `realm_access.roles` → `ROLE_*`) nằm ở `core-security` (ADR-006:
+khái niệm generic của core); `SecurityConfig` (`@EnableWebSecurity
+@EnableMethodSecurity`, `SecurityFilterChain`, gắn
+`KeycloakRealmRoleConverter` vào `JwtAuthenticationConverter`) nằm ở `app`
+(composition root), cùng lý do đặt JPA/Flyway wiring ở `app` từ S1-T7.
+`spring.security.oauth2.resourceserver.jwt.issuer-uri` đọc qua env var
+`KEYCLOAK_ISSUER_URI`, default local
+`http://localhost:8089/realms/cpq`. Thêm 1 endpoint skeleton-only
+`GET /api/ping` (`core-api`, `PingController`/`PingService`) với
+`@PreAuthorize("hasRole('PRICING_ADMIN')")` đặt trên **service method**
+(không phải controller) đúng yêu cầu ADR-006 "enforce ở method layer".
+
+Hệ quả kiến trúc phụ: `core-api` giờ phụ thuộc `core-security`
+(`implementation(project(":core-security"))`) — cạnh core-to-core đầu
+tiên trong repo. `com.cpq.app.arch.ModuleLayeringArchTest` được sửa theo
+đúng kế hoạch đã ghi sẵn trong javadoc gốc của nó: đổi
+`coreModulesMustNotDependOnEachOther()` (chặn tuyệt đối) thành
+`coreModulesMustBeFreeOfCycles()` (`slices().should().beFreeOfCycles()`)
+— vẫn chặn vòng lặp 2 chiều, cho phép cạnh 1 chiều hợp lệ theo ADR-005
+rule 1 ("mỗi core-* chỉ phụ thuộc core-* nó thật sự cần").
+
+Lý do: Theo đúng ADR-006 (đã Accepted), không có lựa chọn thay thế nào
+được xét lại ở mức task này. Port 8089 chọn để tránh xung đột cục bộ của
+máy agent thực hiện task (ghi theo yêu cầu "Agent không đứng chờ" — chọn
+default hợp lý, không hardcode theo máy cá nhân mà vẫn override được qua
+env var).
+
+Verify: `./gradlew clean build` pass (unit test `KeycloakRealmRoleConverterTest`
+2/2, MockMvc `PingEndpointSecurityIT` 3/3 — 401 không token, 403 role
+`sales`, 200 role `pricing_admin` — không cần Keycloak chạy thật).
+Verify thủ công end-to-end với Keycloak thật (`docker compose up -d
+postgres keycloak`, lấy token qua Resource Owner Password Credentials,
+gọi `GET /api/ping` bằng `curl`) — xem báo cáo S1-T6 cho transcript đầy
+đủ.
+
+Rủi ro đã biết: `cpq-backend` là public client + ROPC grant — chỉ chấp
+nhận được cho local dev/verify thủ công (ADR-006 cũng nói rõ "fine for
+this manual local verification"); không dùng ROPC cho flow đăng nhập thật
+của frontend (S1-T8 cần dùng Authorization Code + PKCE qua `web/`, chưa
+làm ở task này). Không có hệ quả tới ranh giới core/domain (3 role là
+khái niệm core theo ADR-006, không role nào gắn automotive).
