@@ -642,3 +642,76 @@ Verify: `./gradlew build` — xem báo cáo S2-T3+T4; test mới
 `config/packs/automotive/pack.yaml` thật qua
 `loadAllPacksFromClasspath()`, xác nhận Product/Vehicle/Customer + 2
 relationship.
+
+## D-022 — S2-T5: catalog CSV import framework (2026-11-13, backend-dev)
+Quyết định:
+1. **Chia module**: `core-catalog` giữ parser thuần Java
+   (`CatalogCsvParser` — không Spring/JPA/I-O, unit test không cần
+   Testcontainers) + JPA entity `ImportJob`/`ImportJobRowError` (giống
+   pattern `core-metamodel`: entity JPA thuần, repository ở `app`).
+   `core-api` giữ port `CatalogImportService` (+ DTO `ImportResultDto`/
+   `ImportRowErrorDto` riêng, không tái dùng type của `core-catalog`) +
+   `ImportController` — giống pattern `EntityDefinitionQueryService`
+   (S1-T8), nhưng **không** thêm dependency Gradle `core-api -> core-catalog`
+   vì DTO đã tách biệt. `app` giữ impl `CatalogImportServiceImpl` +
+   `CatalogRowWriter` + 2 repository (`ImportJobRepository`/
+   `ImportJobRowErrorRepository`).
+2. **Quy ước `row_number`**: lỗi header (cột CSV không khớp bất kỳ
+   `attribute_def.code` nào, hoặc thiếu cột `required=true`) →
+   `row_number = 0`. Dòng dữ liệu đầu tiên sau header = `row_number = 1`
+   (header không tính là 1 dòng).
+3. **`import_job.status`**: `COMPLETED` (job chạy hết mọi dòng, có thể
+   kèm lỗi dòng) vs `FAILED` (lỗi header/cấu hình — 0 dòng được xử lý,
+   không có "job chạy nửa chừng"). `entityDefCode` không tồn tại → HTTP
+   404, không tạo `import_job` (vì `entity_def_id` là FK NOT NULL, không
+   có gì để ghi). Controller map `COMPLETED` → HTTP 200, `FAILED` → HTTP
+   400 (lỗi do file input, không phải lỗi server).
+4. **`pack_id`/`pack_version` cho `entity_instance` tạo qua import**:
+   `entity_instance.pack_id` là NOT NULL (D-020), nhưng một `entity_def`
+   tạo trực tiếp (không qua `PackLoaderService`, ví dụ entity_def test/
+   ad-hoc) có `pack_id` NULL. Import dùng `pack_id`/`pack_version` của
+   chính `entity_def` nếu có; nếu không, dùng sentinel cố định
+   `"manual-import"`/version `1`.
+5. **Per-row atomicity**: `CatalogRowWriter` là `@Service` riêng (không
+   phải method nội bộ của `CatalogImportServiceImpl`) với
+   `@Transactional writeRow(...)`, gọi qua Spring proxy của bean khác
+   (tránh self-invocation) — để 1 dòng lỗi (duplicate business key,
+   constraint violation) chỉ rollback đúng dòng đó, không ảnh hưởng dòng
+   đã commit trước hoặc dòng chạy sau. `CatalogImportServiceImpl` chủ
+   động **không** `@Transactional` ở method `importCsv`, để mỗi lần gọi
+   `catalogRowWriter.writeRow(...)` mở transaction riêng.
+6. **RBAC**: chỉ `PRICING_ADMIN` được import (khác
+   `EntityDefinitionQueryService` cho cả 3 role đọc) — vì import là hành
+   động ghi/thay đổi master data, không phải đọc.
+7. **CSV parsing tự viết**, không thêm thư viện (`commons-csv`/`opencsv`):
+   hỗ trợ quoted field kiểu RFC 4180 cơ bản (dấu phẩy trong field, escape
+   `""`), không hỗ trợ quoted field nhiều dòng — đủ cho catalog MVP,
+   tránh thêm dependency cho logic không phức tạp.
+8. `EntityInstanceRepository` (app) thêm
+   `findByEntityDefinition_Code(String)` — truy vấn hạ tầng (JOIN ở DB,
+   tránh `LazyInitializationException` khi đọc `entityDefinition` ngoài
+   transaction), không phải business logic domain-specific.
+Lý do: theo đúng scope S2-T5 (`docs/sprints/sprint-2.md`), D-005 (match
+tên cột trực tiếp), ADR-003 (`import_job`/`import_job_row_error`), nguyên
+tắc "agent không đứng chờ" (CLAUDE.md mục 6) cho các lựa chọn không có ADR
+sẵn (quy ước `row_number`, HTTP status mapping, `packId` fallback, ranh
+giới transaction theo dòng).
+Hệ quả: `core-catalog` thêm `ImportColumnSpec`/`CatalogRowError`/
+`ParsedCatalogRow`/`ParsedCatalogCsv`/`CatalogCsvParser`/`ImportJob`/
+`ImportJobStatus`/`ImportJobRowError` (+ dependency Gradle mới
+`jakarta.persistence-api`); `core-api` thêm package
+`com.cpq.core.api.catalog` (`CatalogImportService`/`ImportResultDto`/
+`ImportRowErrorDto`/`ImportController`); `app` thêm package
+`com.cpq.app.catalog` (`CatalogImportServiceImpl`/`CatalogRowWriter`/
+`ImportJobRepository`/`ImportJobRowErrorRepository`) + sửa
+`EntityInstanceRepository`; migration mới
+`app/src/main/resources/db/migration/V6__catalog_import.sql`
+(`import_job`/`import_job_row_error`). Không ảnh hưởng ranh giới
+core/domain: không bảng/field nào gắn automotive; core vẫn hoàn toàn
+generic (CSV import chỉ biết `attribute_def.code`, không biết "sku"/"vin"
+nghĩa là gì).
+Verify: `./gradlew :core-catalog:test` (5 test unit `CatalogCsvParserTest`,
+pure Java, pass) + `./gradlew :app:test --tests "com.cpq.app.catalog.*"`
+(9 test — `CatalogImportServiceImplIT` 6 test tích hợp Testcontainers +
+`ImportEndpointSecurityIT` 3 test RBAC MockMvc, pass) + `./gradlew build`
+(toàn repo, kết quả đầy đủ trong báo cáo task).
