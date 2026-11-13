@@ -1331,3 +1331,65 @@ Verify: `./gradlew :app:test --tests
 test pass mới (6 service-layer, 6 HTTP/RBAC, gồm 1 test đọc dữ liệu
 Vehicle thật seed từ S2-T6/T7 end-to-end); `./gradlew build` toàn repo —
 xem kết quả đầy đủ trong báo cáo task.
+
+## D-031 — S2-T13-prereq: seed `price_list`/`rule_set` automotive thật cho demo pricing (2026-11-13, backend-dev)
+Quyết định:
+1. **Thêm `AutomotivePricingSeedRunner`** (`app/src/main/java/com/cpq/app/
+   demo/`), cùng pattern `ApplicationRunner` idempotent mà `DemoDataSeedRunner`
+   (S2-T6/D-026) và `AutomotiveFitmentSeedRunner` (S2-T7/D-029) đã dùng —
+   không sửa 2 class đó. Gọi `demoDataSeedRunner.run(args)` trước (idempotent,
+   no-op an toàn nếu Spring đã tự chạy nó) để đảm bảo 30 `Product` entity_
+   instance (S2-T6) tồn tại trước, không chain qua
+   `AutomotiveFitmentSeedRunner` vì task này không cần dữ liệu fitment/
+   supersession.
+2. **`price_list` code `AUTOMOTIVE-DEFAULT`, currency `USD`** (không `VND`)
+   — giữ nhất quán với mọi `price_list` test fixture đã có
+   (`PricingCalculationServiceIT`/`TierBasedPricingServiceIT` đều dùng
+   `USD`), không có yêu cầu tiền thật/VND nào ở demo này.
+   **NEEDS-PO-REVIEW** nếu PO muốn VND cho demo automotive VN.
+   30 `price_list_item` instance-specific (1 mỗi Product, không phải 1
+   segment-level row chung — ADR-003) để UI waterfall (S2-T13) thấy giá
+   khác nhau theo SKU; amount = công thức demo đơn giản `50.00 + 5.00 *
+   index` (index theo thứ tự `entity_instance.id` tăng dần, tức thứ tự
+   import CSV) — không phải giá thật, chỉ cần > 0 và khác nhau giữa SKU.
+3. **`rule_set` code `AUTOMOTIVE-STANDARD`**: 4 rule JSON DSL ở stage
+   `segment-adjustment`, mỗi rule 1 giá trị `Customer.tier` mà `pack.yaml`
+   automotive định nghĩa (OEM -15%, DISTRIBUTOR -10%, DEALER -5%, WORKSHOP
+   0%/giá niêm yết) — mở rộng từ 3 tier
+   `TierBasedPricingServiceIT` (S2-T12/D-028) minh hoạ (OEM/DISTRIBUTOR/
+   DEALER) thêm WORKSHOP cho đủ 4 giá trị enum thật. 1 rule Groovy SCRIPT ở
+   stage `override` đọc `attributes.contractOverridePrice`, label chứa
+   "contract override" — **bắt buộc SCRIPT, không DSL**, lý do kỹ thuật
+   giống D-028 điểm 3/4 nguyên văn (`DslRuleExecutor`'s `set-price` chỉ
+   nhận literal JSON, không tham chiếu được biến runtime).
+4. **Test mới**: `app/src/test/java/com/cpq/app/demo/
+   AutomotivePricingSeedRunnerIT.java` (4 test, `@SpringBootTest` +
+   Testcontainers Postgres thật — khởi động app thật, không tạo dữ liệu
+   trong test transaction): (a) 30 `price_list_item`, amount khác nhau; (b)
+   gọi `PricingCalculationService.calculate` với Product SKU thật
+   (`BRK-PAD-NEW-001`) + `priceListCode=AUTOMOTIVE-DEFAULT`/
+   `ruleSetCode=AUTOMOTIVE-STANDARD` → không lỗi "not found", waterfall hợp
+   lệ; (c) Customer `CUST-OEM-001` (seed thật từ `customers.csv`, tier OEM)
+   → final amount = list price × 0.85; (d) gọi lại runner lần 2 (giả lập
+   restart) → không lỗi, không tạo trùng `price_list`/`rule_set`/rule.
+Lý do: Lỗ hổng phát hiện trước khi giao S2-T13 (UI giá/waterfall) cho
+frontend-dev — S2-T10/S2-T12 chỉ test rule engine bằng dữ liệu tạo trong
+transaction test (rollback), nên app chạy thật (`./gradlew :app:bootRun`)
+không có `price_list`/`rule_set` nào tồn tại, mọi gọi
+`POST /api/pricing/calculate` sẽ 404. Theo CLAUDE.md mục 6 ("agent không
+đứng chờ"), chọn mặc định hợp lý (USD, công thức giá demo, 4 tier rule) và
+tiếp tục, không chờ PO.
+Hệ quả: Không sửa `RuleEngine`/`DslRuleExecutor`/`GroovyRuleExecutor`/
+`PricingCalculationServiceImpl`/DTO nào — chỉ thêm 1 class seed + 1 test
+class, đúng scope "chỉ thêm dữ liệu". `priceListCode=AUTOMOTIVE-DEFAULT`,
+`ruleSetCode=AUTOMOTIVE-STANDARD` — frontend-dev (S2-T13) dùng 2 giá trị
+này gọi API thật; ví dụ `entityInstanceId`/SKU dùng để test:
+`BRK-PAD-NEW-001` (Product, `entityDefId` = id của entity_def `Product`,
+lấy qua `GET /api/entities` hoặc `GET /api/catalog/Product/instances`).
+Không có migration Flyway mới (không đổi schema). Không ảnh hưởng ranh
+giới core/domain: rule mẫu OEM/DISTRIBUTOR/DEALER/WORKSHOP và giá demo chỉ
+là seed data, không phải code Java gắn automotive trong `core-pricing`.
+Verify: `./gradlew :app:test --tests
+"com.cpq.app.demo.AutomotivePricingSeedRunnerIT"` — BUILD SUCCESSFUL, 4/4
+test pass. `./gradlew build` toàn repo — xem kết quả đầy đủ trong báo cáo
+task.
