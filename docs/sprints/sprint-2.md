@@ -268,6 +268,33 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   2/2) không regress. PR: `sprint2-s2-t8-configurator-engine` → `main`,
   chưa merge.
 
+### S2-T9-prereq — Generic entity instance listing API
+- **Người phụ trách**: backend-dev
+- **Phụ thuộc**: S2-T6, S2-T7 (dữ liệu Product/Vehicle thật để test)
+- **Phát sinh vì**: rà soát `core-api` trước khi giao S2-T9 cho
+  frontend-dev phát hiện lỗ hổng — không có API nào list/search
+  `entity_instance` (dữ liệu thật) theo entity_def (`GET /api/entities`
+  chỉ list entity_def *definition*/metadata; `GET
+  /api/configurator/compatible` và `GET
+  /api/catalog/instances/{id}/superseded-by` cả hai đều cần sẵn 1
+  `anchorInstanceId`/instance id). Frontend cần API này để render bảng
+  catalog (wireframe `docs/ux/01-vehicle-part-selection.md`) và để người
+  dùng chọn 1 Vehicle ban đầu. Chặn hẳn S2-T9 nên làm trước, không chờ PO
+  (CLAUDE.md mục 6).
+- **Việc làm**: `GET /api/catalog/{entityDefCode}/instances` (generic,
+  phân trang `page`/`size`, filter tuỳ chọn `search` theo businessKey/
+  displayLabel), trả `id`/`businessKey`/`displayLabel`/toàn bộ attribute
+  value dạng `Map<String,Object>`. RBAC cùng mức `GET /api/entities`
+  (3 role đọc-only). `entityDefCode` sai → 404.
+- **Trạng thái**: Done (2026-11-13, backend-dev). Chi tiết quyết định:
+  D-030 (`docs/decisions.md`), gồm 1 lưu ý kỹ thuật NEEDS-PO-REVIEW nhẹ về
+  cách tránh một edge case suy luận kiểu tham số của Hibernate. Verify:
+  `./gradlew :app:test --tests
+  "com.cpq.app.catalog.EntityInstanceQueryServiceImplIT" --tests
+  "com.cpq.app.catalog.CatalogInstanceEndpointIT"` — BUILD SUCCESSFUL,
+  12/12 test pass mới; `./gradlew build` toàn repo pass, không regress.
+  PR: `sprint2-entity-instance-listing-api` → `main`, chưa merge.
+
 ### S2-T9 — UI: luồng chọn xe → part tương thích
 - **Người phụ trách**: frontend-dev
 - **Phụ thuộc**: S2-T6, S2-T7, S2-T8
