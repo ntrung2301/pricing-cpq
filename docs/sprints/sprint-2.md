@@ -73,6 +73,23 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   map thật).
 - **Done khi**: `PackLoaderService` nạp pack automotive thành công, query
   entity_def "Product"/"Vehicle" qua API thấy đủ field + key/label đúng.
+- **Trạng thái**: Done (2026-11-13, backend-dev, gộp cùng S2-T4 — cùng
+  sửa 1 file `pack.yaml`). Tạo
+  `app/src/main/resources/config/packs/automotive/pack.yaml`: entity
+  `Product` (key=`sku`, label=`name`, 6 attribute: sku/name/
+  oem_or_aftermarket/core_charge/moq/packaging_unit, `external_code_hint`
+  ACES/PIES cho các field có tương ứng), entity `Vehicle` (make/model/
+  year/engine — **không** đặt `key_attribute`/`label_attribute`, lý do +
+  NEEDS-PO-REVIEW ở D-021), relationship `supersedes` (Product→Product,
+  ONE_TO_MANY) và `contains` (Product→Product, **MANY_TO_MANY** — khác đề
+  xuất ban đầu, lý do ở D-021). Không sửa `PackLoaderService`/descriptor
+  record nào — thuần dữ liệu (D-013). Test mới `AutomotivePackIT`
+  (`app/src/test/java/com/cpq/app/pack/`) nạp pack thật qua
+  `loadAllPacksFromClasspath()`, xác nhận Product/Vehicle + relationship.
+  Verify: `./gradlew build` — BUILD SUCCESSFUL, app module 10 test class/
+  22 test pass (gồm `AutomotivePackIT` 1/1 mới). Chi tiết: D-021
+  (`docs/decisions.md`). PR: `sprint2-s2-t3-t4-automotive-master-data` →
+  `main`, chưa merge.
 
 ### S2-T4 — Pack automotive: entity Customer
 - **Người phụ trách**: backend-dev
@@ -83,6 +100,15 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   automotive (E1-05, tách khỏi E3-04 theo D-019).
 - **Done khi**: `PackLoaderService` nạp entity Customer thành công, query
   qua API thấy đủ field, key/label đúng.
+- **Trạng thái**: Done (2026-11-13, backend-dev, gộp cùng S2-T3 — xem chi
+  tiết triển khai + evidence verify ở mục S2-T3 phía trên, cùng 1 file
+  `pack.yaml`/1 PR). Entity `Customer` (key=`customer_id`, label=`name`,
+  6 attribute: customer_id/name/tier/contract_code/contact_email/
+  contact_phone — `tier` dùng `data_type: ENUM`, giá trị hợp lệ OEM/
+  DISTRIBUTOR/DEALER/WORKSHOP ghi chú trong `label` vì `attribute_def`
+  chưa có field enum-value-list, xem NEEDS-PO-REVIEW ở D-021). Test
+  `AutomotivePackIT` xác nhận Customer. PR: cùng
+  `sprint2-s2-t3-t4-automotive-master-data` → `main`, chưa merge.
 
 ### S2-T5 — Catalog import framework (CSV)
 - **Người phụ trách**: backend-dev

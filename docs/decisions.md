@@ -506,3 +506,63 @@ Verify: `./gradlew build` pass — xem báo cáo S2-T1 cho log đầy đủ (app
 test class / 21 test, bao gồm 3 test case mới của `EntityInstanceServiceIT`
 + 3 của `PackLoaderServiceIT`; `core-metamodel`: 2 test class unit mới,
 không cần Testcontainers).
+
+## D-021 — S2-T3+S2-T4: pack.yaml automotive Product/Vehicle/Customer (2026-11-13, backend-dev)
+Quyết định (các điểm không hiển nhiên trong
+`app/src/main/resources/config/packs/automotive/pack.yaml`, viết hoàn
+toàn dưới dạng dữ liệu/config theo D-013 — không sửa
+`PackLoaderService`/descriptor record nào):
+
+1. **`Vehicle` không có `key_attribute`/`label_attribute`**: MVP chỉ có
+   `make`/`model`/`year`/`engine`, không field nào là khoá nghiệp vụ tự
+   nhiên đáng tin cậy một mình (ví dụ không có VIN ở mức "loại xe", chỉ
+   có mô tả cấu hình); để trống `key_attribute` — dùng id nội bộ
+   (`entity_instance.id`) làm khoá thực tế, đúng tinh thần "optional" của
+   D-019. Tương tự, tên hiển thị hợp lý của 1 Vehicle là ghép
+   make+model+year+engine, nhưng `label_attribute` (D-019) chỉ nhận
+   đúng 1 attribute code — không đủ biểu đạt composite label. Để trống
+   thay vì chọn tạm 1 field đơn (ví dụ chỉ `model`) vì dễ gây nhầm ("Civic"
+   không đủ phân biệt các năm/động cơ khác nhau). **NEEDS-PO-REVIEW**: cần
+   cơ chế "computed/composite label" ở tầng metamodel hoặc service (không
+   phải domain code) nếu UI cần hiển thị tên xe gọn — chưa làm ở S2-T3,
+   để task sau quyết định (có thể là mở rộng `EntityDefinition` với
+   `label_template` kiểu generic, hoặc xử lý thuần ở tầng UI/service đọc
+   nhiều attribute).
+2. **`oem_or_aftermarket` (Product) và `tier` (Customer) dùng
+   `data_type: ENUM`** nhưng metamodel hiện (`AttributeDefinition`,
+   S1-T7/S2-T1) **chưa có field lưu danh sách giá trị hợp lệ** cho kiểu
+   ENUM — không có validate enum thật ở tầng ghi `entity_instance`. Tạm
+   ghi giá trị hợp lệ vào `label` (ví dụ `"Tier (values: OEM,
+   DISTRIBUTOR, DEALER, WORKSHOP)"`) làm ghi chú con người đọc được, thay
+   vì đổi sang STRING (giữ đúng ý định domain: đây là tập giá trị đóng).
+   **NEEDS-PO-REVIEW**: cần task riêng thêm `allowed_values`/tương tự vào
+   `attribute_def` (core, generic — không phải field riêng cho
+   automotive) nếu muốn validate ENUM thật; không tự thêm ở đây vì
+   S2-T2 (constraint engine) đang chạy song song, có thể đụng
+   descriptor/migration.
+3. **Cardinality `supersedes` = `ONE_TO_MANY`** (theo đúng sprint-2.md
+   S2-T3 đã ghi sẵn): `from_entity`/`to_entity` đều là `Product` (tự tham
+   chiếu); quy ước hướng: "from" = sản phẩm thay thế (còn bán), "to" =
+   (nhiều) sản phẩm bị thay thế/ngừng bán — 1 sản phẩm thay thế có thể
+   gộp thay cho nhiều SKU cũ (consolidation), nhưng 1 SKU cũ chỉ có đúng
+   1 sản phẩm thay thế hiện hành.
+4. **Cardinality `contains` (kit/bundle) = `MANY_TO_MANY`** (khác default
+   gợi ý ban đầu "ONE_TO_MANY" trong mô tả S2-T3): chọn MANY_TO_MANY vì
+   trong catalog phụ tùng aftermarket, 1 part linh kiện thường được bán
+   lẻ **và** nằm trong nhiều kit/bundle khác nhau cùng lúc — ràng buộc
+   ONE_TO_MANY (1 kit nhiều component, nhưng 1 component chỉ thuộc đúng 1
+   kit) không khớp thực tế này.
+5. **`constraint_instances[]`/`rule_sets[]` không xuất hiện trong pack
+   này** — đúng phạm vi S2-T3/S2-T4 (fitment là S2-T7, pricing rule là
+   S2-T10+), và `PackLoaderService` hiện cũng chưa parse các key đó
+   (không sửa service/descriptor trong task này, để tránh đụng S2-T2 đang
+   chạy song song cùng lúc).
+Lý do: Theo đúng scope S2-T3/S2-T4 (sprint-2.md) + D-019 (key/label
+optional, cap 20) + CLAUDE.md mục 6 ("agent không đứng chờ" — chọn mặc
+định hợp lý, ghi NEEDS-PO-REVIEW, tiếp tục) cho các điểm metamodel chưa có
+cơ chế sẵn (enum values, computed label).
+Verify: `./gradlew build` — xem báo cáo S2-T3+T4; test mới
+`AutomotivePackIT` (`app/src/test/java/com/cpq/app/pack/`) nạp
+`config/packs/automotive/pack.yaml` thật qua
+`loadAllPacksFromClasspath()`, xác nhận Product/Vehicle/Customer + 2
+relationship.

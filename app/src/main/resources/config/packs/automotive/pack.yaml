@@ -1,0 +1,133 @@
+# Automotive domain pack (Sprint 2, S2-T3/S2-T4 — E1-03/E1-05).
+#
+# Pure data/config per D-013/D-019 — no Java changes needed to add this
+# pack. Loaded automatically at app startup by PackLoaderService (ADR-001)
+# via classpath*:config/packs/*/pack.yaml.
+#
+# constraint_instances[]/rule_sets[] (fitment, pricing) are intentionally
+# NOT modeled here yet — PackLoaderService doesn't support them (see
+# docs/decisions.md D-021, NEEDS-PO-REVIEW). Fitment lands in S2-T7.
+pack_id: automotive
+version: 1
+entities:
+  # Product (E1-03). key=sku, label=name (D-019).
+  - code: Product
+    label: Product
+    key_attribute: sku
+    label_attribute: name
+    attributes:
+      - code: sku
+        label: SKU
+        data_type: STRING
+        required: true
+        external_code_hint: "PIES:PartNumber"
+      - code: name
+        label: Name
+        data_type: STRING
+        required: true
+        external_code_hint: "PIES:PartDescription"
+      # Valid values: OEM, AFTERMARKET. No enum-value-list field exists yet
+      # on attribute_def (D-021) — documented here in the label until one
+      # is added.
+      - code: oem_or_aftermarket
+        label: "OEM/Aftermarket (values: OEM, AFTERMARKET)"
+        data_type: ENUM
+        required: false
+        external_code_hint: "PIES:BrandAAIAID"
+      - code: core_charge
+        label: Core charge
+        data_type: DECIMAL
+        required: false
+        external_code_hint: "PIES:Item_CoreCharge"
+      - code: moq
+        label: Minimum order quantity
+        data_type: NUMBER
+        required: false
+      - code: packaging_unit
+        label: Packaging unit
+        data_type: STRING
+        required: false
+        external_code_hint: "PIES:Item_UnitMeasure"
+  # Vehicle (E1-03). No natural single-attribute key or label at MVP scope
+  # — key_attribute/label_attribute intentionally omitted here, see
+  # docs/decisions.md D-021 for the reasoning (internal id as de facto
+  # key; composite make+model+year+engine display label needs a
+  # "computed label" mechanism the metamodel doesn't have yet, flagged
+  # NEEDS-PO-REVIEW).
+  - code: Vehicle
+    label: Vehicle
+    attributes:
+      - code: make
+        label: Make
+        data_type: STRING
+        required: true
+        external_code_hint: "ACES:Make"
+      - code: model
+        label: Model
+        data_type: STRING
+        required: true
+        external_code_hint: "ACES:Model"
+      - code: year
+        label: Year
+        data_type: NUMBER
+        required: true
+        external_code_hint: "ACES:Years"
+      - code: engine
+        label: Engine
+        data_type: STRING
+        required: false
+        external_code_hint: "ACES:EngineBase"
+  # Customer (E1-05). key=customer_id, label=name (D-019). No ACES/PIES
+  # correspondence (those are parts-catalog standards, not customer data)
+  # — no external_code_hint on this entity's attributes.
+  - code: Customer
+    label: Customer
+    key_attribute: customer_id
+    label_attribute: name
+    attributes:
+      - code: customer_id
+        label: Customer ID
+        data_type: STRING
+        required: true
+      - code: name
+        label: Name
+        data_type: STRING
+        required: true
+      # Valid values: OEM, DISTRIBUTOR, DEALER, WORKSHOP. Same enum-value-
+      # list caveat as Product.oem_or_aftermarket above (D-021).
+      - code: tier
+        label: "Tier (values: OEM, DISTRIBUTOR, DEALER, WORKSHOP)"
+        data_type: ENUM
+        required: true
+      - code: contract_code
+        label: Contract code
+        data_type: STRING
+        required: false
+      - code: contact_email
+        label: Contact email
+        data_type: STRING
+        required: false
+      - code: contact_phone
+        label: Contact phone
+        data_type: STRING
+        required: false
+relationships:
+  # Self-referencing on Product: "from" = the superseding (replacement)
+  # product, "to" = the superseded (discontinued) product it replaces.
+  # ONE_TO_MANY per sprint-2.md S2-T3: one replacement product can
+  # supersede several older discontinued products (part-number
+  # consolidation), but a given discontinued product has exactly one
+  # current replacement.
+  - code: supersedes
+    from_entity: Product
+    to_entity: Product
+    cardinality: ONE_TO_MANY
+  # Self-referencing on Product: "from" = the kit/bundle product, "to" =
+  # a component product it contains. MANY_TO_MANY (not the ONE_TO_MANY
+  # default) because the same component part commonly ships inside more
+  # than one kit/bundle in aftermarket catalogs, while a kit contains many
+  # components — see docs/decisions.md D-021.
+  - code: contains
+    from_entity: Product
+    to_entity: Product
+    cardinality: MANY_TO_MANY
