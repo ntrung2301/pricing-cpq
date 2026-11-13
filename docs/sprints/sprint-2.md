@@ -239,6 +239,8 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   HALF_UP scale 2 chỉ ở bước cuối (D-009).
 - **Done khi**: Test round-trip: tổng các bước waterfall = giá cuối, cho cả
   rule DSL và SCRIPT.
+- **Trạng thái**: Done — superseded, implement trong S2-T10 (xem D-023 mục
+  8), không cần task riêng.
 
 ### S2-T12 — Phân tầng khách automotive + giá hợp đồng riêng
 - **Người phụ trách**: backend-dev
