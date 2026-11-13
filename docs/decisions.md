@@ -377,3 +377,34 @@ chạy 2 lần liên tiếp trên stack thật (docker compose postgres+keycloak
 cho transcript đầy đủ. Toàn bộ service khởi động cho bước verify này đã
 được dừng sạch sau khi xong (`docker compose down`, kill các process
 backend/frontend) — xác nhận bằng `lsof`/`docker ps` không còn gì chạy.
+
+## D-019 — ADR-001 amendment: key/label attribute generic trên entity_def + cap 20 attribute/entity_def (2026-11-13, PO)
+Quyết định: Thêm vào metamodel (ADR-001) 2 con trỏ tuỳ chọn trên `entity_def`:
+`key_attribute_def_id` (thuộc tính đóng vai **business key**, duy nhất) và
+`label_attribute_def_id` (thuộc tính dùng làm **tên hiển thị**) — core chỉ
+biết khái niệm "key"/"label" generic, không biết đó là SKU hay Customer ID.
+`entity_instance` thêm 2 cột denormalize `business_key`/`display_label`
+(tên cột generic, index + unique theo `entity_def_id + pack_id +
+business_key`), đồng bộ từ giá trị EAV của key/label attribute lúc ghi —
+tránh phải join `entity_instance_attribute_value` mỗi lần cần tra cứu/kiểm
+tra duy nhất theo khoá nghiệp vụ. Giới hạn tối đa **20 attribute_def/
+entity_def** (gồm cả key/label), validate ở `PackLoaderService` khi nạp
+`pack.yaml`.
+Áp dụng cho pack automotive (Sprint 2): **Product** → key=`sku`,
+label=`name`; **Customer** → key=`customer_id`, label=`name`. Các field còn
+lại (OEM/aftermarket, supersession, kit, core charge, MOQ, đơn vị đóng gói
+cho Product; tier, hợp đồng, liên hệ cho Customer) là attribute thường,
+tính vào quota 20.
+Lý do (PO): Cần chuẩn bị master data (product/customer) qua đúng cơ chế
+metamodel trước khi làm configurator/pricing; cần 1 khoá nghiệp vụ ổn định
+(sku/customer_id) để import/tra cứu/supersession reference nhanh mà vẫn giữ
+generic (core không hardcode tên field domain nào).
+Hệ quả: Sửa `docs/adr/0001-metamodel-and-domain-pack.md` (thêm mục key/
+label + cap 20). Sửa `docs/backlog.md`: E1-01 thêm acceptance criteria
+tương ứng; tách **E1-05 [pack:automotive] Entity Customer** ra khỏi E3-04
+(trước đây Customer chỉ được ngụ ý trong rule phân tầng khách, chưa có
+entity definition riêng) — E3-04 giờ phụ thuộc E1-05. Sửa
+`docs/roadmap.md` Sprint 2 (thêm E1-05 vào danh sách deliver). Thêm
+`docs/sprints/sprint-2.md`, đặt master data (Product qua E1-01/E1-03/E1-04,
+Customer qua E1-01/E1-05/E1-04) làm lát cắt đầu tiên của Sprint 2, trước
+configurator (Epic 2) và pricing (Epic 3).
