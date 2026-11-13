@@ -297,12 +297,51 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 
 ### S2-T9 — UI: luồng chọn xe → part tương thích
 - **Người phụ trách**: frontend-dev
-- **Phụ thuộc**: S2-T6, S2-T7, S2-T8
+- **Phụ thuộc**: S2-T6, S2-T7, S2-T8 (+ S2-T9-prereq, API list instance)
 - **Việc làm**: Màn hình chọn make/model/year/engine → hiện part tương
   thích (DataGrid MUI theo D-015); part có supersession → gợi ý part thay
   thế khi chọn part cũ (E2-02, theo wireframe `docs/ux/`).
-- **Done khi**: Chạy local, chọn xe thật từ dữ liệu S2-T6 → thấy đúng part
-  tương thích trên UI, không mock.
+- **Trạng thái**: Done (2026-11-13, frontend-dev). `web/src/catalog/
+  InstanceTable.tsx` ([core] generic data table, cột từ
+  `Object.keys(attributes)` + businessKey/displayLabel, không hardcode
+  domain string) + `web/src/configurator/VehiclePartSelectionScreen.tsx`
+  ([pack:automotive] theo wireframe `docs/ux/01-vehicle-part-selection.md`):
+  1 dropdown "Chọn xe" (đơn giản hoá từ 4 dropdown phụ thuộc tuần tự) gọi
+  `GET /api/catalog/Vehicle/instances`; nút "Tìm part tương thích" gọi
+  `GET /api/configurator/compatible` rồi filter client-side trên catalog
+  Product đã fetch (`GET /api/catalog/Product/instances`, giữ cột
+  attribute nhất quán ở cả 2 trạng thái); mỗi dòng Product gọi `GET
+  /api/catalog/instances/{id}/superseded-by` hiện badge "⚠ Đã bị supersede
+  bởi ..."; "Chọn part này" highlight dòng + dòng xác nhận "Đã chọn: ...".
+  Đủ 4 edge case bắt buộc: loading (CircularProgress riêng từng khối),
+  empty "chưa chọn xe" (hint "Chọn xe ở trên để lọc nhanh hơn"), empty
+  "không có part tương thích" (Alert + nút "Xem toàn bộ catalog"), error
+  (Alert + nút "Thử lại", không crash trang). `App.tsx` thay
+  `EntitiesList` (S1-T8) bằng màn hình này làm trang chính sau login (giữ
+  nguyên `web/src/entities/*` làm ví dụ pattern, không xoá). Chi tiết đầy
+  đủ các quyết định đơn giản hoá (1-dropdown, client-side filter, cột =
+  attribute code không phải label, badge per-row query, không thêm
+  react-router-dom/@mui/x-data-grid) + 1 sự cố môi trường verify (cổng
+  5173/8080 bị tiến trình backend cũ từ checkout khác chiếm, đã dừng sạch
+  và chạy lại từ worktree này): D-031 (`docs/decisions.md`).
+  **Verify**: `npm run test` (Vitest, `web/`) — 4 test file/16 test pass
+  (`InstanceTable.test.tsx` 4/4 mới, `VehiclePartSelectionScreen.test.tsx`
+  6/6 mới, `EntitiesList.test.tsx` 3/3, `App.test.tsx` 3/3 không regress);
+  `npm run lint` sạch; `npm run build` thành công. **Playwright E2E thật,
+  không mock** (`e2e/tests/vehicle-part-selection.spec.ts`, mới): login
+  Keycloak thật → thấy Vehicle/Product thật → chọn "Toyota Camry 2018" →
+  "Tìm part tương thích" → đúng 4 Product thật đã seed fitment
+  (`BRK-PAD-NEW-001`/`BRK-ROTOR-NEW-001`/`OIL-FLT-NEW-010`/`AIR-FLT-001`,
+  theo `AutomotiveFitmentSeedRunner.FITMENT_PLAN[0]`), xác nhận
+  `BRK-PAD-OLD-001`/`SPK-PLUG-001` (fitment xe khác) không xuất hiện; "Chọn
+  part này" → thấy "Đã chọn: ...". Chạy trên stack thật (docker compose
+  postgres+keycloak sẵn có, `./gradlew :app:bootRun` + `npm run dev` riêng
+  từ worktree này) — `npx playwright test` 2/2 pass, chạy 2 lần liên tiếp,
+  cả 2 lần xanh (cùng `e2e/tests/walking-skeleton.spec.ts` đã sửa heading
+  cho khớp màn hình mới). Mọi tiến trình `bootRun`/`vite` do task này khởi
+  động đã dừng sạch sau verify (`lsof -i :8080 -i :5173` rỗng); container
+  Postgres/Keycloak dùng chung vẫn chạy (infra chung, ngoài lifecycle
+  task). PR: `sprint2-s2-t9-vehicle-part-selection` → `main`, chưa merge.
 
 ### S2-T10 — Rule engine hybrid: JSON DSL + Groovy sandbox
 - **Người phụ trách**: backend-dev

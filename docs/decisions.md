@@ -1331,3 +1331,116 @@ Verify: `./gradlew :app:test --tests
 test pass mới (6 service-layer, 6 HTTP/RBAC, gồm 1 test đọc dữ liệu
 Vehicle thật seed từ S2-T6/T7 end-to-end); `./gradlew build` toàn repo —
 xem kết quả đầy đủ trong báo cáo task.
+
+## D-031 — S2-T9: UI chọn xe -> part tương thích (2026-11-13, frontend-dev)
+Bối cảnh: wireframe `docs/ux/01-vehicle-part-selection.md` mô tả 4 dropdown
+phụ thuộc tuần tự (Make→Model→Year→Engine), "Bỏ qua chọn xe" riêng, search/
+filter theo attribute, phân trang. API thật đã có (D-030: `GET
+/api/catalog/{entityDefCode}/instances`; S2-T8: `GET
+/api/configurator/compatible`; S2-T7: `GET
+/api/catalog/instances/{id}/superseded-by`). Dữ liệu demo seed sẵn: 5
+Vehicle, 30 Product, fitment + 5 cặp supersession (S2-T6/S2-T7). Quyết định
+đơn giản hoá/kỹ thuật (theo CLAUDE.md mục 6 "agent không đứng chờ"):
+1. **1 dropdown "Chọn xe" duy nhất** (hiển thị `${make} ${model} ${year}`
+   ghép từ `attributes`) thay 4 dropdown Make/Model/Year/Engine phụ thuộc
+   tuần tự. Lý do: chỉ 5 Vehicle demo (S2-T6/S2-T7) — 4-dropdown phụ thuộc
+   tuần tự không cần thiết ở quy mô này, thêm phức tạp (4 query, 4 trạng
+   thái loading) không tương xứng giá trị tại MVP/demo. **NEEDS-PO-REVIEW**:
+   khi catalog Vehicle lớn hơn (nhiều hãng/dòng/năm thật), nên quay lại
+   4-dropdown phụ thuộc như wireframe gốc hoặc dùng autocomplete — việc
+   này để task riêng sau, không chặn S2-T9.
+2. **Không làm "Bỏ qua chọn xe" như nút riêng + không làm thanh tìm kiếm/
+   filter theo attribute** (cả 2 có trong wireframe nhưng nằm ngoài danh
+   sách scope cụ thể giao cho task này) — hành vi "Bỏ qua chọn xe" đạt được
+   tự nhiên bằng cách không bấm "Tìm part tương thích" (bảng mặc định luôn
+   hiện toàn bộ catalog, có hint "Chọn xe ở trên để lọc nhanh hơn"), và nút
+   "Xem toàn bộ catalog" xuất hiện lại ngay trong khối empty-state khi filter
+   rỗng. Search/filter theo attribute để lại cho task sau (S2-T13 hoặc một
+   task UI riêng) nếu PO thấy cần trước demo.
+3. **Lọc "part tương thích" bằng client-side filter trên catalog Product đã
+   fetch đầy đủ** (1 lần, `size=100`, đủ cho 30 Product demo/scale "vài nghìn
+   part" theo Q-002 vẫn cần đánh giá lại ở quy mô lớn hơn), không dùng trực
+   tiếp `CompatibleInstanceSummary` (thiếu `attributes`) để render bảng. Lý
+   do: `GET /api/configurator/compatible` trả `{entityInstanceId,
+   businessKey, displayLabel}` — không có `attributes` map, nên nếu render
+   trực tiếp, bảng generic sẽ mất hết cột attribute khi ở trạng thái filter
+   (UX không nhất quán giữa 2 trạng thái). Gọi API lấy set id tương thích,
+   rồi filter danh sách Product đầy đủ (đã fetch) theo id đó — giữ UI nhất
+   quán, chỉ 2 API call nhỏ (không phân trang catalog lớn hơn 1 trang ở quy
+   mô demo).
+4. **Component core/domain split**: `web/src/catalog/InstanceTable.tsx`
+   (generic [core], cột = `Object.keys(rows[0].attributes)` + businessKey/
+   displayLabel, không biết gì về "Vehicle"/"Product") + `web/src/
+   configurator/VehiclePartSelectionScreen.tsx` ([pack:automotive] theo
+   wireframe — màn hình này tự thân chỉ có nghĩa cho domain có khái niệm
+   "xe"/"part", nên hằng số `VEHICLE_ENTITY_DEF_CODE='Vehicle'`/
+   `PRODUCT_ENTITY_DEF_CODE='Product'` wiring ở đây là literal dữ liệu
+   (giống `AutomotiveFitmentSeedRunner` ở backend), không phải chuỗi hiển
+   thị hardcode trong component lõi). Cột attribute hiển thị **mã
+   attribute_def** (`sku`, không phải label "SKU"/"Part Number") vì `GET
+   /api/catalog/{entityDefCode}/instances` không trả label — fetch thêm
+   `GET /api/entities` để map code→label bị coi là phức tạp không cần cho
+   scope task này (đơn giản hoá, NEEDS-PO-REVIEW nhẹ nếu muốn khớp UX chữ
+   đẹp hơn).
+5. **Supersession badge**: 1 `useQuery` riêng mỗi dòng đang hiện
+   (`SupersessionHint`, gọi `GET /api/catalog/instances/{id}/superseded-by`
+   cho từng row hiển thị) — ở quy mô demo (≤30 dòng) chấp nhận được, không
+   cần gộp thành 1 API batch. Lỗi/loading của badge không chặn/làm hỏng
+   bảng chính (badge chỉ ẩn, không hiện lỗi riêng).
+6. **App.tsx thay hẳn `EntitiesList` (S1-T8) bằng
+   `VehiclePartSelectionScreen`** làm màn hình chính sau login — màn
+   "Entity definitions" (metadata) chỉ còn giá trị như ví dụ pattern, không
+   còn là màn hình người dùng thấy đầu tiên. `web/src/entities/*` (types/
+   entitiesApi/EntitiesList + test) **giữ nguyên, không xoá** — vẫn là ví
+   dụ pattern hợp lệ cho admin/metadata screen sau này. Do đó cũng sửa
+   `e2e/tests/walking-skeleton.spec.ts` (assert heading mới "Chọn xe / Chọn
+   part" thay "Entity definitions"; bỏ assertion `SampleWidget` — phần
+   "thấy dữ liệu thật" giờ do `e2e/tests/vehicle-part-selection.spec.ts`
+   đảm nhiệm sâu hơn) và `web/src/App.test.tsx`.
+7. **Không thêm `react-router-dom`/`@mui/x-data-grid`** — giữ đúng chỉ dẫn
+   task (S2-T13 nối tiếp cùng component, không cần route riêng ở bước này;
+   MUI `Table`/`TableContainer` sẵn có đủ cho quy mô demo, D-015 đã ghi lại
+   lựa chọn này để sau nếu cần sort/filter nâng cao mới thêm DataGrid thật).
+8. **Thêm devDependency `@testing-library/user-event`** (chưa có trong
+   `web/package.json`) — cần để test tương tác Select/Button thực tế
+   (click dropdown, chọn option) theo đúng cách người dùng thật tương tác,
+   thay vì giả lập `fireEvent.change` trên nội bộ DOM MUI `Select` (khó
+   đúng với MUI's non-native select).
+9. **Môi trường verify Playwright**: lúc bắt đầu task, cổng 5173/8080 đã bị
+   chiếm bởi 1 tiến trình `vite`/Spring Boot backend chạy từ checkout chính
+   (`/Users/trungnguyen/Documents/Projects/pricing-cpq`, không phải worktree
+   này) — kiểm tra bằng `curl` cho thấy backend đó **chưa có** endpoint `GET
+   /api/catalog/{entityDefCode}/instances` (404), nên không dùng được cho
+   verify task này dù có đang chạy. Đã dừng 2 tiến trình đó (`kill`, chỉ
+   tiến trình `node`/`java` ứng dụng — không đụng container Postgres/
+   Keycloak dùng chung) và chạy lại đúng app/web từ worktree này trên cùng
+   cổng 5173/8080/8089/5432. Postgres/Keycloak dùng chung (container
+   `pricing-cpq-postgres-1`/`pricing-cpq-keycloak-1`, docker-compose
+   `name: pricing-cpq` cố định) đã có sẵn dữ liệu demo đầy đủ từ trước
+   (`DemoDataSeedRunner`/`AutomotiveFitmentSeedRunner` báo "already present
+   — skipping" lúc khởi động) — không cần seed lại. **NEEDS-PO-REVIEW**: cơ
+   chế hiện tại chưa có cách tách cổng theo từng agent/worktree cho
+   app/web (chỉ Postgres/Keycloak là infra dùng chung theo thiết kế); nếu
+   nhiều agent cần chạy `bootRun`/`npm run dev` thật đồng thời, cần một quy
+   ước cổng riêng (vd theo worktree) để tránh phải dừng tiến trình của
+   agent khác như lần này.
+Lý do: theo đúng "agent không đứng chờ" — mọi lựa chọn trên đều có thể làm
+ngay với API/dữ liệu đã có, không cần PO quyết trước; các điểm cần ý kiến
+PO đã gắn NEEDS-PO-REVIEW cụ thể, không chặn hoàn thành task.
+Hệ quả: `web/` thêm `src/catalog/{types,catalogApi,InstanceTable}.tsx` +
+test, `src/configurator/{types,configuratorApi,VehiclePartSelectionScreen}.tsx`
++ test; sửa `src/App.tsx`/`src/App.test.tsx`; thêm devDependency
+`@testing-library/user-event`. `e2e/` thêm
+`tests/vehicle-part-selection.spec.ts`, sửa `tests/walking-skeleton.spec.ts`.
+Không có hệ quả tới ranh giới core/domain mới ngoài điểm 4 đã giải thích.
+Verify: `npm run test` (Vitest, `web/`) — 4 test file/16 test pass (bao gồm
+6 test mới `VehiclePartSelectionScreen.test.tsx`, 4 test mới
+`InstanceTable.test.tsx`); `npm run lint` sạch; `npm run build` thành công
+(`tsc -b && vite build`). Playwright (`e2e/`, `npx playwright test`) trên
+stack thật (docker compose postgres+keycloak đã chạy sẵn, `./gradlew
+:app:bootRun` + `npm run dev` chạy riêng từ worktree này) — 2/2 test pass,
+chạy 2 lần liên tiếp, cả 2 lần xanh. Toàn bộ tiến trình `bootRun`/`vite` do
+task này khởi động đã dừng sạch sau verify (`kill`, xác nhận lại bằng
+`lsof -i :8080 -i :5173` không còn gì); container Postgres/Keycloak dùng
+chung vẫn để chạy (infra dùng chung, không thuộc lifecycle của riêng task
+này).
