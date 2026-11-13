@@ -386,6 +386,37 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   pricing` 7 class/38 test 0 fail (không sửa, không regress). PR:
   `sprint2-s2-t12-tier-pricing` → `main`, chưa merge.
 
+### S2-T13-prereq — Seed price_list/rule_set automotive thật
+- **Người phụ trách**: backend-dev
+- **Phụ thuộc**: S2-T6, S2-T10, S2-T12
+- **Lý do phát sinh**: phát hiện khi chuẩn bị giao S2-T13 cho frontend-dev —
+  S2-T10/S2-T12 chỉ có test (`PricingCalculationServiceIT`/
+  `TierBasedPricingServiceIT`) tự tạo `price_list`/`rule_set` **trong
+  transaction test** (rollback), nên app chạy thật
+  (`./gradlew :app:bootRun`) không có `price_list`/`rule_set` nào tồn tại —
+  mọi gọi `POST /api/pricing/calculate` sẽ 404 "not found". S2-T13 cần dữ
+  liệu thật để demo "không mock".
+- **Việc làm**: Thêm `AutomotivePricingSeedRunner` (`ApplicationRunner`
+  idempotent, cùng pattern `DemoDataSeedRunner`/`AutomotiveFitmentSeedRunner`):
+  1 `price_list` (`AUTOMOTIVE-DEFAULT`, USD) với 30 `price_list_item`
+  (1/Product đã seed S2-T6, amount khác nhau theo SKU); 1 `rule_set`
+  (`AUTOMOTIVE-STANDARD`) gồm 4 rule DSL phân tầng Customer.tier (OEM
+  -15%/DISTRIBUTOR -10%/DEALER -5%/WORKSHOP 0%) ở stage
+  `segment-adjustment` + 1 rule SCRIPT đọc `contractOverridePrice` ở stage
+  `override` (giống cách `TierBasedPricingServiceIT`/D-028 đã quyết).
+- **Trạng thái**: Done (2026-11-13, backend-dev). Test mới
+  `AutomotivePricingSeedRunnerIT` (4 test, `@SpringBootTest` + Testcontainers
+  Postgres thật — khởi động app thật, không tạo dữ liệu trong test
+  transaction): 30 `price_list_item` amount khác nhau; gọi pricing API với
+  SKU thật `BRK-PAD-NEW-001` → không lỗi "not found"; Customer thật
+  `CUST-OEM-001` (tier OEM) → final amount = list price × 0.85; chạy lại
+  runner lần 2 (giả lập restart) → không lỗi, không tạo trùng. Chi tiết
+  quyết định: D-031 (`docs/decisions.md`). Verify: `./gradlew build` —
+  xem kết quả đầy đủ trong báo cáo task. PR:
+  `sprint2-automotive-pricing-seed` → `main`, chưa merge.
+  `priceListCode=AUTOMOTIVE-DEFAULT`, `ruleSetCode=AUTOMOTIVE-STANDARD`
+  — dùng cho S2-T13 (frontend-dev).
+
 ### S2-T13 — UI tối thiểu: giá + waterfall
 - **Người phụ trách**: frontend-dev
 - **Phụ thuộc**: S2-T9, S2-T11
