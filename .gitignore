@@ -5,6 +5,7 @@ build/
 *.jar
 *.war
 !.mvn/wrapper/maven-wrapper.jar
+!gradle/wrapper/gradle-wrapper.jar
 .gradle/
 out/
 HELP.md

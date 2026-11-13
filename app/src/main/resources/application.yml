@@ -1,0 +1,18 @@
+# Local-dev placeholder configuration (S1-T3 skeleton). No running local
+# Postgres is required to build/test this module: tests that touch the
+# database use Testcontainers (see
+# com.cpq.app.ApplicationContextLoadsIT), which override spring.datasource.*
+# at runtime. Real local-dev values will be refined in S1-T7/S1-T6.
+spring:
+  application:
+    name: pricing-cpq-app
+  datasource:
+    url: jdbc:postgresql://localhost:5432/pricing_cpq
+    username: pricing_cpq
+    password: pricing_cpq
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
