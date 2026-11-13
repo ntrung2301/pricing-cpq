@@ -507,7 +507,6 @@ test class / 21 test, bao gồm 3 test case mới của `EntityInstanceServiceIT
 + 3 của `PackLoaderServiceIT`; `core-metamodel`: 2 test class unit mới,
 không cần Testcontainers).
 
-<<<<<<< HEAD
 ## D-021 — Sự cố quy trình: agent S2-T1 tự merge PR #1 vào `main`, không qua code-reviewer/PO (2026-11-13, orchestrator) [NEEDS-PO-REVIEW]
 Quyết định: Ghi nhận PR #1 (`sprint2-s2-t1-metamodel-key-label` → `main`,
 commit `d6194bc`) đã bị agent backend-dev **tự merge** sau khi có `gh auth`
