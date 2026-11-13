@@ -1039,3 +1039,97 @@ trước đó không regress (`core-constraint-engine` 15/15,
 `core-metamodel` 7/7, `core-pricing` 38/38, `core-security` 2/2,
 `core-catalog` 5/5, `ModuleLayeringArchTest` 2/2 — không cycle core-*,
 không core-* nào depend `app`).
+
+## D-028 — S2-T12: tier-based pricing + contract override qua `PriceCalculationRequest` mở rộng (2026-11-13, backend-dev)
+Quyết định:
+1. **`PriceCalculationRequest` thêm 2 field tuỳ chọn ở cuối record**
+   (`customerInstanceId: Long`, `contractOverridePrice: BigDecimal`), giữ
+   nguyên constructor 6-field cũ qua 1 constructor phụ (uỷ quyền, mặc định
+   2 field mới = `null`) — không sửa 4 lần gọi `new
+   PriceCalculationRequest(...)` đã có trong `PricingCalculationServiceIT`
+   (S2-T10), giảm diện ảnh hưởng/rủi ro conflict khi merge song song với
+   các task Sprint 2 khác đang chạy trên worktree riêng.
+2. **Đọc `tier` của Customer**: `PricingCalculationServiceImpl` (tầng
+   `app`) tự resolve `tier` khi có `customerInstanceId` — load
+   `EntityInstance` qua `EntityInstanceRepository.findById`, tìm trong
+   `EntityInstanceAttributeValueRepository.findByEntityInstance(...)` row
+   có `attributeDefinition.code == "tier"`, lấy `getValueString()`, set vào
+   `PricingContext.attributes().put("tier", ...)`. Cùng pattern
+   attribute-lookup generic mà `ConstraintInstanceEvaluationService`
+   (S2-T2/D-024) đã dùng. Hardcode chuỗi `"tier"` chấp nhận được ở tầng
+   `app` theo đúng brief task (business glue cho 1 request shape cụ thể),
+   `RuleEngine`/`PricingContext`/DSL/Script executor ở `core-pricing` vẫn
+   hoàn toàn không biết "tier"/"Customer" là gì — chỉ thấy 1 entry trong
+   `attributes` map như mọi attribute khác.
+3. **"Giá hợp đồng riêng" đơn giản hoá bằng field request
+   `contractOverridePrice`** (không đọc 1 attribute "contract_price" mới
+   trên entity Customer như mô tả gốc E3-04/sprint-2.md gợi ý) — lý do kỹ
+   thuật, không chỉ tiện lợi: action `set-price` của `DslRuleExecutor` chỉ
+   nhận `value` là JSON numeric **literal** (`decimalField` ép kiểu number
+   trực tiếp từ node JSON của rule definition, không hỗ trợ `{"var": ...}`
+   tham chiếu biến runtime) — một rule DSL *tĩnh* không thể biểu diễn "giá
+   đích khác nhau theo từng Customer/request". Nếu đọc giá hợp đồng từ 1
+   attribute Customer thì rule override vẫn phải là Script (Groovy) để đọc
+   giá trị đó tại runtime — tức là bản chất kỹ thuật (phải dùng Script,
+   không thể dùng DSL cho override động) không đổi dù nguồn giá trị là
+   attribute Customer hay field request. Dùng field request tránh phải mở
+   rộng `pack.yaml` automotive (thêm attribute `contract_price` cho
+   Customer, đụng cap 20 attribute đã gần đầy — D-025 ghi Customer đã có 6)
+   chỉ để exercise 1 stage của rule engine ở mức MVP. **NEEDS-PO-REVIEW**:
+   nếu PO muốn giá hợp đồng lưu thật trong dữ liệu Customer (không phải
+   truyền mỗi lần gọi API), cần việc riêng thêm attribute + đọc tương tự
+   `tier`, không phải sửa lại cơ chế này.
+4. **Override rule bắt buộc là SCRIPT, không DSL** (hệ quả trực tiếp của
+   điểm 3): rule mẫu tại stage `override`
+   (`"def target = attributes.contractOverridePrice; if (target != null)
+   { return [delta: target - currentAmount, label: '...(contract
+   override)...'] }; return null"`) đọc `contractOverridePrice` từ
+   `attributes` binding Groovy, tính `delta` động. Label chứa chữ thường
+   `"contract override"` (test assert `.contains("contract override")`)
+   theo đúng yêu cầu Done-khi của task.
+5. **Rule mẫu phân tầng (`tier` OEM/DISTRIBUTOR/DEALER) viết JSON DSL**,
+   không Groovy — mỗi tier là 1 điều kiện tĩnh (`{"var": "tier"} ==
+   "OEM"`) ứng với 1 % chiết khấu cố định, đúng khả năng của DSL
+   (`percent-discount` với `value` literal), không cần runtime dynamic
+   nên không có lý do chọn Script (ngược lại điểm 3/4) — giữ rule đơn giản
+   nhất đủ việc theo CLAUDE.md mục 7. 3 rule test minh hoạ (OEM -15%,
+   DISTRIBUTOR -10%, DEALER 0%/giá niêm yết) tạo trực tiếp qua
+   `RuleSetEntity.addRule(new RuleEntity(...))` trong test (không qua
+   `pack.yaml` — `PackLoaderService` chưa hỗ trợ `rule_sets[]`, đã ghi
+   nhận ở D-023 mục 7), cùng cách S2-T10 tự tạo rule_set test fixture.
+6. **Test mới**: `app/src/test/java/com/cpq/app/pricing/
+   TierBasedPricingServiceIT.java` (2 test, Testcontainers Postgres thật,
+   entity_def "PIT_CUSTOMER_*" độc lập — không đụng entity Customer thật
+   của automotive pack ở E1-05, theo đúng tinh thần "test tổng quát hoá,
+   không gắn vào 1 domain cụ thể" mà S2-T2/S2-T10 đã làm): (a) cùng
+   Product/price_list_item, 2 Customer khác tier (OEM vs DEALER) → final
+   amount khác nhau (85.00 vs 100.00); (b) Customer OEM (sẽ giảm 15% nếu
+   không có override) + `contractOverridePrice=77.77` → final amount =
+   77.77 (override thắng tier discount), có 1 waterfall step label chứa
+   "contract override", tổng delta các step = final amount (round-trip,
+   nối tiếp yêu cầu S2-T11/D-023 mục 8).
+Lý do: Theo đúng scope S2-T12 (sprint-2.md) + E3-04 (docs/backlog.md) +
+nguyên tắc "agent không đứng chờ" (CLAUDE.md mục 6) cho 2 lựa chọn
+không hiển nhiên (field request thay vì attribute Customer; SCRIPT bắt
+buộc cho override) không có ADR sẵn nào quyết định trước.
+Hệ quả: `core-api`'s `PriceCalculationRequest` có 8 field (6 cũ + 2 mới),
+1 constructor phụ tương thích ngược. `app`'s
+`PricingCalculationServiceImpl` thêm phụ thuộc
+`EntityInstanceRepository`/`EntityInstanceAttributeValueRepository`
+(đã tồn tại từ S2-T1/S2-T2, không tạo type mới) + 2 method riêng
+(`buildAttributes`, `resolveCustomerTier`); `normalizeAttributes` đổi từ
+trả `Map.of()` (immutable) sang `new HashMap<>()` khi `attributes` request
+là `null`, để `buildAttributes` có thể `put()` thêm vào — không ảnh hưởng
+hành vi cũ (map rỗng cả hai trường hợp, immutability không được test nào
+dựa vào). Không có migration Flyway mới (không đổi schema). Không ảnh
+hưởng ranh giới core/domain: field request mới là generic (customer
+instance id + 1 giá tuỳ chọn), rule mẫu OEM/DISTRIBUTOR/DEALER chỉ là dữ
+liệu test, không phải code Java gắn automotive.
+Verify: `./gradlew build` toàn repo — BUILD SUCCESSFUL (14m16s, 47 task, 20
+executed/27 up-to-date). `app`: 16 test class/45 test, 0 fail (gồm
+`TierBasedPricingServiceIT` 2/2 mới); `core-pricing`: 7 class/38 test, 0
+fail (không regress S2-T10); core-metamodel/core-constraint-engine/
+core-catalog/core-security: 0 fail. Riêng
+`TierBasedPricingServiceIT` chạy lại độc lập trước đó
+(`./gradlew :app:test --tests "com.cpq.app.pricing.TierBasedPricingServiceIT"`)
+cũng 2/2 pass.

@@ -1,9 +1,13 @@
 package com.cpq.app.pricing;
 
+import com.cpq.app.metamodel.EntityInstanceAttributeValueRepository;
+import com.cpq.app.metamodel.EntityInstanceRepository;
 import com.cpq.core.api.pricing.PriceCalculationRequest;
 import com.cpq.core.api.pricing.PriceCalculationResponse;
 import com.cpq.core.api.pricing.PricingCalculationService;
 import com.cpq.core.api.pricing.WaterfallStepSummary;
+import com.cpq.core.metamodel.EntityInstance;
+import com.cpq.core.metamodel.EntityInstanceAttributeValue;
 import com.cpq.core.pricing.PricingContext;
 import com.cpq.core.pricing.Rule;
 import com.cpq.core.pricing.RuleEngine;
@@ -39,16 +43,22 @@ public class PricingCalculationServiceImpl implements PricingCalculationService 
     private final PriceListRepository priceListRepository;
     private final PriceListItemRepository priceListItemRepository;
     private final RuleEngine ruleEngine;
+    private final EntityInstanceRepository entityInstanceRepository;
+    private final EntityInstanceAttributeValueRepository attributeValueRepository;
 
     public PricingCalculationServiceImpl(
             RuleSetRepository ruleSetRepository,
             PriceListRepository priceListRepository,
             PriceListItemRepository priceListItemRepository,
-            RuleEngine ruleEngine) {
+            RuleEngine ruleEngine,
+            EntityInstanceRepository entityInstanceRepository,
+            EntityInstanceAttributeValueRepository attributeValueRepository) {
         this.ruleSetRepository = ruleSetRepository;
         this.priceListRepository = priceListRepository;
         this.priceListItemRepository = priceListItemRepository;
         this.ruleEngine = ruleEngine;
+        this.entityInstanceRepository = entityInstanceRepository;
+        this.attributeValueRepository = attributeValueRepository;
     }
 
     @Override
@@ -56,11 +66,60 @@ public class PricingCalculationServiceImpl implements PricingCalculationService 
     public PriceCalculationResponse calculate(PriceCalculationRequest request) {
         BigDecimal basePrice = resolveBasePrice(request);
         RuleSet ruleSet = loadRuleSet(request.ruleSetCode());
-        PricingContext context =
-                new PricingContext(basePrice, request.quantity(), normalizeAttributes(request.attributes()));
+        PricingContext context = new PricingContext(basePrice, request.quantity(), buildAttributes(request));
 
         List<WaterfallStep> steps = ruleEngine.run(context, ruleSet);
         return toResponse(steps);
+    }
+
+    /**
+     * Merges the request's plain {@code attributes} bag with the two
+     * S2-T12/E3-04 tier-pricing extras — both optional, both injected
+     * under plain generic keys so {@link RuleEngine}/{@code core-pricing}
+     * never need to know "Customer"/"tier"/"contract" mean anything
+     * (CLAUDE.md: engine lõi generic, domain knowledge is data read here
+     * in {@code app}, the one glue layer allowed to be request-specific).
+     */
+    private Map<String, Object> buildAttributes(PriceCalculationRequest request) {
+        Map<String, Object> attributes = normalizeAttributes(request.attributes());
+        if (request.customerInstanceId() != null) {
+            attributes.put("tier", resolveCustomerTier(request.customerInstanceId()));
+        }
+        if (request.contractOverridePrice() != null) {
+            attributes.put("contractOverridePrice", request.contractOverridePrice());
+        }
+        return attributes;
+    }
+
+    /**
+     * Reads the {@code "tier"}-coded attribute value of the given
+     * entity_instance (e.g. a Customer, per E1-05's {@code pack.yaml} —
+     * but this method itself only knows "an entity_instance with an
+     * attribute literally coded {@code tier}", same generic
+     * attribute-value-lookup pattern {@code
+     * ConstraintInstanceEvaluationService} (S2-T2) uses). Hardcoding the
+     * string {@code "tier"} here is domain-aware, but acceptable at this
+     * layer per the S2-T12 task brief: {@code app} is business glue for
+     * one specific request shape, not the generic engine.
+     */
+    private String resolveCustomerTier(Long customerInstanceId) {
+        EntityInstance customer =
+                entityInstanceRepository
+                        .findById(customerInstanceId)
+                        .orElseThrow(
+                                () ->
+                                        new PricingDataNotFoundException(
+                                                "No entity_instance with id " + customerInstanceId));
+        return attributeValueRepository.findByEntityInstance(customer).stream()
+                .filter(value -> "tier".equals(value.getAttributeDefinition().getCode()))
+                .findFirst()
+                .map(EntityInstanceAttributeValue::getValueString)
+                .orElseThrow(
+                        () ->
+                                new PricingDataNotFoundException(
+                                        "entity_instance "
+                                                + customerInstanceId
+                                                + " has no 'tier' attribute value"));
     }
 
     private BigDecimal resolveBasePrice(PriceCalculationRequest request) {
@@ -117,7 +176,7 @@ public class PricingCalculationServiceImpl implements PricingCalculationService 
      */
     private static Map<String, Object> normalizeAttributes(Map<String, Object> attributes) {
         if (attributes == null) {
-            return Map.of();
+            return new HashMap<>();
         }
         Map<String, Object> normalized = new HashMap<>();
         attributes.forEach(
