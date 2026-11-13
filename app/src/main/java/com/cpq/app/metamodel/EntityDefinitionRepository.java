@@ -1,6 +1,7 @@
 package com.cpq.app.metamodel;
 
 import com.cpq.core.metamodel.EntityDefinition;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -24,4 +25,15 @@ public interface EntityDefinitionRepository extends JpaRepository<EntityDefiniti
      */
     @Query("SELECT e FROM EntityDefinition e LEFT JOIN FETCH e.attributes WHERE e.code = :code")
     Optional<EntityDefinition> findByCodeWithAttributes(@Param("code") String code);
+
+    /**
+     * Loads every {@link EntityDefinition} together with its attributes in
+     * one query (fetch join) — same N+1 avoidance reasoning as
+     * {@link #findByCodeWithAttributes}, but for the "list everything"
+     * access pattern used by {@code GET /api/entities} (S1-T8).
+     * {@code DISTINCT} avoids duplicate parent rows from the
+     * one-to-many join; ordered by {@code code} for a stable response.
+     */
+    @Query("SELECT DISTINCT e FROM EntityDefinition e LEFT JOIN FETCH e.attributes ORDER BY e.code")
+    List<EntityDefinition> findAllWithAttributes();
 }

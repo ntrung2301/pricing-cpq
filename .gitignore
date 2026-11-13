@@ -21,6 +21,12 @@ dist-ssr/
 coverage/
 .turbo/
 
+# --- Playwright (e2e/) ---
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # --- IDE ---
 .idea/
 .vscode/
