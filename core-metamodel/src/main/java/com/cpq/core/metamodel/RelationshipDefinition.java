@@ -43,6 +43,12 @@ public class RelationshipDefinition {
     @Column(nullable = false, length = 20)
     private RelationshipCardinality cardinality;
 
+    @Column(name = "pack_id", length = 100)
+    private String packId;
+
+    @Column(name = "pack_version")
+    private Integer packVersion;
+
     protected RelationshipDefinition() {
         // JPA
     }
@@ -76,5 +82,19 @@ public class RelationshipDefinition {
 
     public RelationshipCardinality getCardinality() {
         return cardinality;
+    }
+
+    /** Records which domain pack (and version) this definition came from (ADR-001). */
+    public void assignPack(String packId, int packVersion) {
+        this.packId = packId;
+        this.packVersion = packVersion;
+    }
+
+    public String getPackId() {
+        return packId;
+    }
+
+    public Integer getPackVersion() {
+        return packVersion;
     }
 }

@@ -1,0 +1,21 @@
+# Test-only fixture for PackLoaderServiceIT's classpath-scan test
+# (loadAllPacksFromClasspath). Deliberately synthetic/non-domain-specific
+# (CLAUDE.md genericity principle) — not automotive, not any real
+# industry. Entity code is unique ("PackLoaderSyntheticWidget") so it
+# can't collide with any other test's seeded entity_def rows.
+pack_id: synthetic-test-pack
+version: 1
+entities:
+  - code: PackLoaderSyntheticWidget
+    label: Pack Loader Synthetic Widget
+    key_attribute: widget_key
+    label_attribute: widget_name
+    attributes:
+      - code: widget_key
+        label: Widget Key
+        data_type: STRING
+        required: true
+      - code: widget_name
+        label: Widget Name
+        data_type: STRING
+        required: true

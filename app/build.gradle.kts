@@ -37,6 +37,13 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
+    // PackLoaderService (S2-T1, ADR-001) parses pack.yaml with Jackson's
+    // YAML dataformat module — version managed by the Spring Boot BOM
+    // (cpq.java-conventions), reusing the same Jackson major version
+    // already brought in by spring-boot-starter-web, so no separate
+    // version pin is needed here. See docs/decisions.md D-020.
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
+
     testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")

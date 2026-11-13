@@ -1,6 +1,8 @@
 # ADR-001: Metamodel động và cơ chế domain pack
 
-- **Trạng thái**: Accepted (revised 2026-11-12 theo PO override, xem D-013)
+- **Trạng thái**: Accepted (revised 2026-11-12 theo PO override, xem D-013;
+  amended 2026-11-13 theo D-019 — thêm key/label attribute generic + cap 20
+  attribute/entity_def)
 - **Ngày**: 2026-11-12
 - **Người quyết**: architect
 
@@ -64,6 +66,21 @@ entity lưu theo mô hình EAV có kiểu: bảng `entity_instance` +
 `entity_instance_attribute_value` (giá trị theo cột đúng type, validate
 theo `attribute_def.data_type` lúc viết).
 
+**Key/label attribute + cap 20 (D-019, 2026-11-13)**: `entity_def` có thêm 2
+con trỏ tuỳ chọn tới `attribute_def` của chính nó — `key_attribute_def_id`
+(thuộc tính đóng vai **business key**, giá trị duy nhất trong phạm vi
+`entity_def_id + pack_id`) và `label_attribute_def_id` (thuộc tính dùng làm
+**tên hiển thị**). Core chỉ biết khái niệm "key"/"label" generic — không
+biết đó là SKU hay Customer ID, pack tự quyết attribute nào giữ vai trò
+này. `entity_instance` có thêm 2 cột denormalize `business_key` và
+`display_label` (tên cột generic, có index + unique constraint theo
+`entity_def_id + pack_id + business_key`), được đồng bộ từ giá trị EAV của
+key/label attribute mỗi khi ghi `entity_instance_attribute_value` — tránh
+phải join EAV mỗi lần cần tra cứu/validate duy nhất theo khoá nghiệp vụ
+(ví dụ import đối chiếu theo SKU, supersession reference theo Part key).
+Mỗi `entity_def` tối đa **20 `attribute_def`** (gồm cả key/label nếu có),
+`PackLoaderService` validate khi nạp `pack.yaml`, từ chối nạp nếu vượt.
+
 Domain pack = 1 file `pack.yaml` (đặt trong thư mục config, ví dụ
 `app/src/main/resources/config/packs/automotive/pack.yaml` — **không phải
 module Java riêng**) khai báo: `pack_id`, `version`, `entities[]`,
@@ -93,3 +110,7 @@ phá vỡ dữ liệu hiện có (ví dụ xoá attribute đang có giá trị) 
   bất kỳ file Java nào — chỉ thêm 1 file `pack.yaml` mới. Việc ACES/PIES
   (Q-001) sau này chỉ là thêm `attribute_def`/`relationship_def` +
   `import_mappings` mới trong file config automotive, không đụng engine.
+  Key/label + cap 20 (D-019) không đổi kết luận này — "key"/"label" là
+  khái niệm metamodel generic, pack tổng hợp Sprint 4 chỉ cần khai báo
+  `key_attribute_def_id`/`label_attribute_def_id` trong `pack.yaml` của nó
+  như mọi pack khác, không cần sửa engine.

@@ -57,6 +57,12 @@ public class AttributeDefinition {
     @Column(name = "external_code_hint")
     private String externalCodeHint;
 
+    @Column(name = "pack_id", length = 100)
+    private String packId;
+
+    @Column(name = "pack_version")
+    private Integer packVersion;
+
     protected AttributeDefinition() {
         // JPA
     }
@@ -77,6 +83,20 @@ public class AttributeDefinition {
     /** Package-private: the owning side is set via {@link EntityDefinition#addAttribute}. */
     void assignEntityDefinition(EntityDefinition entityDefinition) {
         this.entityDefinition = entityDefinition;
+    }
+
+    /** Records which domain pack (and version) this definition came from (ADR-001). */
+    public void assignPack(String packId, int packVersion) {
+        this.packId = packId;
+        this.packVersion = packVersion;
+    }
+
+    public String getPackId() {
+        return packId;
+    }
+
+    public Integer getPackVersion() {
+        return packVersion;
     }
 
     public Long getId() {
