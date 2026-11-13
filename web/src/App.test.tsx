@@ -16,9 +16,13 @@ vi.mock('react-oidc-context', () => ({
 
 // Prevents this fast unit test from making a real network call to the
 // backend — the no-mock, real-data proof is the separate Playwright E2E
-// test (S1-T8 scope), not this component-level test.
-vi.mock('./entities/entitiesApi', () => ({
-  fetchEntities: vi.fn().mockResolvedValue([]),
+// test (S1-T8/S2-T9 scope), not this component-level test.
+vi.mock('./catalog/catalogApi', () => ({
+  fetchInstances: vi.fn().mockResolvedValue({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 }),
+  fetchSupersededBy: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('./configurator/configuratorApi', () => ({
+  fetchCompatibleInstances: vi.fn().mockResolvedValue([]),
 }))
 
 function renderApp(ui: ReactElement = <App />) {
@@ -50,7 +54,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /login with keycloak/i })).toBeInTheDocument()
   })
 
-  it('shows the entities screen (not the login button) once authenticated', () => {
+  it('shows the vehicle/part selection screen (not the login button) once authenticated', () => {
     useAuthMock.mockReturnValue({
       isLoading: false,
       isAuthenticated: true,
@@ -61,7 +65,7 @@ describe('App', () => {
 
     renderApp()
 
-    expect(screen.getByRole('heading', { name: /entity definitions/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /chọn xe \/ chọn part/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /login with keycloak/i })).not.toBeInTheDocument()
   })
 })
