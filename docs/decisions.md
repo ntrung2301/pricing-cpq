@@ -1632,3 +1632,66 @@ pass, chạy 2 lần liên tiếp, cả 2 lần xanh (bao gồm bước mới: c
 OEM thật → waterfall đúng 55.00 → -8.25 → 46.75). Mọi tiến trình
 `bootRun`/`vite` do task này khởi động đã dừng sạch sau verify (`lsof -i
 :8080 -i :5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.
+
+## D-035 — S2-T14: QA sign-off Sprint 2 — thêm test determinism HTTP-level, không thêm test sandbox Groovy ở mức app thật (2026-11-14, qa-engineer)
+Bối cảnh: task S2-T14 chỉ ra 2 khoảng trống cụ thể cần tự đánh giá/lấp:
+(1) determinism của `core-pricing` hiện chỉ có test unit (in-process
+`RuleEngine`, 10 lần) và test service-level qua Testcontainers
+(`PricingCalculationServiceIT.sameRequestProducesIdenticalResponseAcrossTenCalls`),
+chưa có test nào gọi `POST /api/pricing/calculate` 2 lần qua HTTP thật lên
+app đang chạy thật (không phải context test spin-up riêng); (2) sandbox
+Groovy ở mức "qua app thật" — hiện không có API public nào cho phép submit
+rule Groovy tuỳ ý lúc runtime.
+Quyết định:
+1. **Thêm 1 test mới** `e2e/tests/pricing-determinism-api.spec.ts`
+   (Playwright `request` fixture, không dùng browser) — lấy access token
+   Keycloak thật qua Resource Owner Password Credentials (client
+   `cpq-backend`, cùng cơ chế D-017/D-023 dùng cho verify thủ công), resolve
+   `entityDefId`/`entityInstanceId`/`customerInstanceId` thật qua `GET
+   /api/entities` + `GET /api/catalog/{code}/instances` (không hardcode id,
+   tránh test giòn khi seed data đổi thứ tự), rồi gọi `POST
+   /api/pricing/calculate` 2 lần liên tiếp lên app đang chạy thật
+   (`./gradlew :app:bootRun`, không phải Testcontainers/MockMvc) với cùng
+   request, assert `toStrictEqual` toàn bộ response (từng
+   `steps[*].deltaAmount`/`resultingAmount`/`rounded` + `finalAmount`) —
+   đúng yêu cầu "không phải unit test nội bộ RuleEngine". Dữ liệu dùng lại
+   đúng fixture D-031/D-034 (`BRK-PAD-NEW-001`, `CUST-OEM-001`,
+   `AUTOMOTIVE-STANDARD`/`AUTOMOTIVE-DEFAULT`) — số liệu kỳ vọng (55.00 →
+   -8.25 → 46.75) xác nhận lại bằng `curl` thật trước khi viết assertion
+   (xem Verify), không đoán. Quyết định **có thêm** test này (không bỏ qua
+   dù unit test `core-pricing` đã nghiêm ngặt — đã đọc kỹ
+   `RuleEngineTest`/`HybridRuleEngineTest`/`PricingCalculationServiceIT`
+   trước khi quyết) vì cả 3 test cũ đều không đi qua một socket HTTP thật
+   tới một tiến trình app độc lập đã khởi động sẵn — lớp JSON
+   serialization/deserialization (Jackson, `BigDecimal` qua
+   `WaterfallStepSummary`) và tầng Spring MVC dispatch thật chưa từng được
+   test determinism trước đây; rủi ro nhỏ nhưng rẻ để lấp (1 file test
+   mới, không sửa code sản phẩm).
+2. **Không thêm test sandbox Groovy ở mức app thật** — xác nhận lại (đọc
+   kỹ + chạy lại) `GroovyRuleCompilerTest` (11 test: chặn import/fully-
+   qualified File I/O, `System.exit`, `System.currentTimeMillis`, `new
+   Date()`, `Random`/`Math.random` không hạt giống, `Thread.sleep`,
+   reflection, `ProcessBuilder`) và `GroovyRuleExecutorTest` (6 test, gồm
+   timeout vòng lặp vô hạn bounded <5s, script độc hại bị reject trước khi
+   chạy) — đủ nghiêm ngặt theo D-023/CLAUDE.md mục 7. Không bịa 1 API
+   "submit rule Groovy" giả để có bề mặt test E2E — hiện chưa có
+   rule-authoring endpoint (Sprint 3/E5-01), rule Groovy chỉ được tạo qua
+   seed runner (`AutomotivePricingSeedRunner`) hoặc test, không có input từ
+   user cuối. Rủi ro chấp nhận được ở MVP (chỉ Pricing Admin kỹ thuật viết
+   Script rule qua seed/config).
+Lý do: Theo đúng chỉ dẫn task S2-T14 ("agent không đứng chờ" — tự quyết,
+ghi lý do, không chờ PO) + nguyên tắc "verify trước khi báo xong" (đọc test
+cũ thật trước khi quyết định thêm/bỏ, không giả định).
+Hệ quả: Thêm `e2e/tests/pricing-determinism-api.spec.ts` (1 file, không
+sửa code sản phẩm nào — đúng vai trò QA "không tự sửa code thay backend-
+dev/frontend-dev"). Không ảnh hưởng ranh giới core/domain (test chỉ gọi
+API có sẵn, dùng data reference automotive giống các E2E spec khác).
+Verify: xem `docs/sprints/sprint-2-qa-signoff.md` cho transcript đầy đủ —
+tóm tắt: `./gradlew build` BUILD SUCCESSFUL (36 test class, 0 fail/error);
+curl thủ công xác nhận ROPC token + 2 lần `POST /api/pricing/calculate`
+cho cùng request → response byte-for-byte giống nhau, `finalAmount=46.75`;
+`npx playwright test` (3 spec, gồm spec mới) chạy 2 lần liên tiếp trên
+stack thật, cả 2 lần 3/3 pass; `./gradlew :core-pricing:test` riêng cho 4
+class sandbox/determinism liên quan — pass lại, 0 fail. Mọi tiến trình
+`bootRun`/`vite` do task này khởi động đã dừng sạch (`lsof -i :8080 -i
+:5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.
