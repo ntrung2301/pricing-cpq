@@ -13,6 +13,9 @@ export interface AttributeSummary {
 }
 
 export interface EntityDefinitionSummary {
+  // D-033 (S2-T13-prereq): entity_def.id, needed to call POST
+  // /api/pricing/calculate's entityDefId field.
+  id: number
   code: string
   label: string
   version: number
