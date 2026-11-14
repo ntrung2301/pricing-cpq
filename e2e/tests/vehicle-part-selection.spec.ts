@@ -13,7 +13,17 @@ import { expect, test } from '@playwright/test'
 // row 0 = "Toyota Camry 2018"): compatible with
 // BRK-PAD-NEW-001/BRK-ROTOR-NEW-001/OIL-FLT-NEW-010/AIR-FLT-001 only —
 // BRK-PAD-OLD-001 (Silverado's fitment, row 3) must NOT show up for Camry.
-test('login, choose a real seeded Vehicle, find compatible Products, and see real fitment data', async ({
+//
+// Extended for S2-T13 (docs/sprints/sprint-2.md): continues the same
+// journey past "Chọn part này" into the real price waterfall —
+// `AutomotivePricingSeedRunner` (D-031) seeds price_list_item amount =
+// `50.00 + 5.00 * index` for each Product (CSV row order); BRK-PAD-NEW-001
+// is CSV row index 1, so list price = 55.00. Customer CUST-OEM-001 (tier
+// OEM) has rule_set `AUTOMOTIVE-STANDARD`'s "OEM tier discount" (-15%):
+// 55.00 - 8.25 = 46.75 final — verified live against the real backend
+// (`POST /api/pricing/calculate`) before writing this assertion, not
+// guessed.
+test('login, choose a real seeded Vehicle, find compatible Products, pick a Customer, and see the real price waterfall', async ({
   page,
 }) => {
   await page.goto('/')
@@ -66,4 +76,24 @@ test('login, choose a real seeded Vehicle, find compatible Products, and see rea
   const brakeRow = page.locator('tr').filter({ hasText: 'BRK-PAD-NEW-001' })
   await brakeRow.getByRole('button', { name: /chọn part này/i }).click()
   await expect(page.getByText(/đã chọn:/i)).toBeVisible()
+
+  // S2-T13: the price waterfall screen mounts right below, nối tiếp "Chọn
+  // part này" (no separate route). Pick the real seeded OEM customer.
+  await expect(page.getByRole('combobox', { name: /khách hàng/i })).toBeVisible({
+    timeout: 15_000,
+  })
+  await page.getByRole('combobox', { name: /khách hàng/i }).click()
+  await page.getByRole('option', { name: /acme motors oem division/i }).click()
+
+  // Real waterfall from the real backend (POST /api/pricing/calculate):
+  // list price 55.00 -> OEM tier discount -8.25 -> final 46.75.
+  await expect(page.getByRole('table', { name: /price waterfall/i })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(page.getByText('List price')).toBeVisible()
+  await expect(page.getByText(/oem tier discount/i)).toBeVisible()
+  const waterfallTable = page.getByRole('table', { name: /price waterfall/i })
+  await expect(waterfallTable).toContainText('55')
+  await expect(waterfallTable).toContainText('46.75')
+  await expect(page.getByText(/giá cuối: 46\.75/i)).toBeVisible()
 })
