@@ -508,6 +508,26 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
   tương thích → giá + waterfall đúng theo tier. Thêm test xác nhận
   deterministic (chạy lại cùng input nhiều lần) và test sandbox Groovy
   (script độc hại bị chặn, không crash app).
+- **Trạng thái**: Done (2026-11-14, qa-engineer). Xác nhận độc lập: chạy
+  lại `./gradlew build` toàn repo (BUILD SUCCESSFUL, 36 test class, 0
+  fail/error); chạy `npx playwright test` (3 spec, gồm 2 spec thật có sẵn
+  từ S2-T9/S2-T13 + 1 spec mới) 2 lần liên tiếp trên stack thật
+  (Postgres/Keycloak dùng chung, `./gradlew :app:bootRun` + `npm run dev`
+  riêng từ worktree này) — cả 2 lần 3/3 pass. Lấp Gap #1 (determinism ở
+  mức HTTP thật): thêm `e2e/tests/pricing-determinism-api.spec.ts`
+  (Playwright `request` fixture — ROPC token Keycloak thật, gọi `POST
+  /api/pricing/calculate` 2 lần lên app thật, assert response giống nhau
+  tuyệt đối + `finalAmount=46.75` đúng số đã verify qua `curl`). Gap #2
+  (sandbox Groovy ở mức app thật): xác nhận lại (đọc + chạy lại)
+  `GroovyRuleCompilerTest` 11/11 + `GroovyRuleExecutorTest` 6/6 đủ nghiêm
+  ngặt — không bịa API submit-rule giả để test E2E vì chưa có
+  rule-authoring endpoint (Sprint 3/E5-01), rủi ro chấp nhận được ở MVP.
+  Không phát hiện bug mới. Chi tiết quyết định: D-035
+  (`docs/decisions.md`). Báo cáo đầy đủ (map từng tiêu chí demo, evidence,
+  transcript): `docs/sprints/sprint-2-qa-signoff.md`. Mọi tiến trình
+  `bootRun`/`vite` do task này khởi động đã dừng sạch sau verify (`lsof -i
+  :8080 -i :5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.
+  PR: `sprint2-s2-t14-qa-signoff` → `main`, chưa merge.
 - **Done khi**: Suite chạy xanh 2 lần liên tiếp trên stack thật (không
   mock), transcript đính kèm báo cáo.
 
