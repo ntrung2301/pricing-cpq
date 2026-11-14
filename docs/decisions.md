@@ -1542,3 +1542,93 @@ chạy `./gradlew :app:test --tests
 dòng assert `id`, field chưa tồn tại trong JSON) trước khi sửa code, GREEN
 sau khi sửa (BUILD SUCCESSFUL, 5/5 test pass). `./gradlew build` toàn repo
 — BUILD SUCCESSFUL; `app` 24 test class/85 test, 0 failure, không regress.
+
+## D-034 — S2-T13: UI giá + waterfall, nối tiếp "Chọn part này" của S2-T9 (2026-11-13, frontend-dev)
+Bối cảnh: wireframe `docs/ux/03-pricing-waterfall.md` mô tả đầy đủ header
+(entity/SL/khách/tier) + bảng waterfall (list price → tier → volume break →
+discount → contract override → final) + cảnh báo guardrail + nút "Áp dụng
+vào quote"/"Quay lại cấu hình". API thật đã có: `POST
+/api/pricing/calculate` (S2-T10/S2-T12), `GET /api/entities` (nay có thêm
+`id`, D-033), `GET /api/catalog/Customer/instances` (D-030, tái dùng pattern
+S2-T9). Dữ liệu demo seed sẵn: `price_list` `AUTOMOTIVE-DEFAULT`, `rule_set`
+`AUTOMOTIVE-STANDARD` (D-031). Quyết định đơn giản hoá/kỹ thuật (CLAUDE.md
+mục 6 "agent không đứng chờ"):
+1. **Không tạo route/màn hình riêng** — `PriceWaterfallScreen`
+   (`web/src/pricing/PriceWaterfallScreen.tsx`) được `VehiclePartSelectionScreen`
+   (S2-T9) render ngay dưới dòng "Đã chọn: ..." khi `selectedProduct` khác
+   null, đúng chỉ dẫn "nối tiếp từ 'Chọn part này', không cần router phức
+   tạp" — giữ nguyên quyết định D-032 điểm 7 (không thêm `react-router-dom`).
+2. **1 dropdown "Khách hàng" + 2 input số** (Số lượng mặc định `1`, Giá hợp
+   đồng riêng tuỳ chọn) — không làm UI phức tạp hơn mô tả tối thiểu của task
+   S2-T13. Không cần nút "Tính giá" riêng: query `POST /api/pricing/calculate`
+   tự động re-run (TanStack Query, key gồm `productId`/`entityDefId`/
+   `customerId`/`quantity`/`contractOverridePrice`) mỗi khi 1 trong các giá
+   trị trên đổi — đúng mô tả wireframe "Loading: ... mỗi khi số lượng, khách
+   hàng ... thay đổi và cần gọi lại rule engine". Chưa chọn Customer → không
+   gọi API (`enabled: selectedCustomerId !== null`), hiện hint "Chọn khách
+   hàng để tính giá." thay vì gọi API với `customerInstanceId=null` (tránh
+   gọi API vô nghĩa liên tục khi mới vào màn).
+3. **1 banner lỗi generic duy nhất** (Alert + nút "Thử lại") cho **mọi** lỗi
+   `POST /api/pricing/calculate` (404 "no price_list"/"no rule_set"/"no
+   price_list_item", lỗi mạng, ...) — **không** phân biệt thành 2 thông báo
+   khác nhau như wireframe gốc ("Không tìm thấy bảng giá áp dụng..." cho
+   trường hợp 404 cụ thể vs banner lỗi chung khác). Lý do: `PricingDataNotFoundException`
+   (backend) map tất cả các loại "not found" về cùng 404 với message khác
+   nhau nhưng không có mã lỗi riêng để UI phân loại chắc chắn; chỉ dẫn task
+   S2-T13 cũng ghi rõ "để banner lỗi, không crash" (không yêu cầu 2 thông
+   báo riêng) — đơn giản hoá hợp lý, không chặn Done khi của task.
+   **NEEDS-PO-REVIEW nhẹ** nếu PO muốn đúng 2 thông báo riêng theo wireframe
+   03 ở 1 task UI-polish sau.
+4. **Không làm cảnh báo margin guardrail riêng** (wireframe mục "⚠ Cảnh báo
+   margin guardrail") — ngoài scope task S2-T13 được giao (guardrail
+   stage/rule thật chưa được backend seed ở D-031's `AUTOMOTIVE-STANDARD`,
+   chỉ có 1 step `stage=guardrail` label "Final price" delta=0 làm điểm
+   round tròn cuối, không phải cảnh báo margin thật) — hiển thị waterfall
+   step đó như mọi step khác (generic, không ẩn/giả định ý nghĩa).
+5. **Không làm nút "Áp dụng vào quote"/"Quay lại cấu hình"** — ngoài scope
+   (không có màn quote/configurator riêng ở Sprint 2 theo chỉ dẫn task).
+6. **`web/src/entities/types.ts`: thêm field `id: number`** vào
+   `EntityDefinitionSummary` (khớp D-033's `core-api` DTO mới) —
+   `PriceWaterfallScreen` tái dùng `fetchEntities` (S1-T8, `web/src/entities/entitiesApi.ts`)
+   có sẵn để tìm `entityDefId` của `code === 'Product'`, không viết thêm 1
+   API call riêng. Cập nhật `EntitiesList.test.tsx` fixture (thêm `id`) cho
+   khớp type mới — không đổi hành vi `EntitiesList`.
+7. **Component core/domain split**: `web/src/pricing/PriceWaterfallScreen.tsx`
+   wire literal `RULE_SET_CODE='AUTOMOTIVE-STANDARD'`/
+   `PRICE_LIST_CODE='AUTOMOTIVE-DEFAULT'`/`PRODUCT_ENTITY_DEF_CODE='Product'`/
+   `CUSTOMER_ENTITY_DEF_CODE='Customer'` — cùng tinh thần D-032 điểm 4 (data
+   reference vào seed data/pack config cụ thể automotive, không phải chuỗi
+   hiển thị hardcode); bảng waterfall tự thân generic (cột "Bước"/"Điều
+   chỉnh"/"Sau bước này" lấy từ `WaterfallStepSummary.label/deltaAmount/
+   resultingAmount`, không biết "tier"/"contract override" nghĩa là gì —
+   những chuỗi đó là `label` do backend/rule data trả về, không hardcode
+   trong component).
+8. **Môi trường verify Playwright**: không gặp lại sự cố cổng như D-032 điểm
+   9 (không có process lạ chiếm cổng lần này) — khởi động `./gradlew
+   :app:bootRun` + `npm run dev` trực tiếp từ worktree này trên cổng
+   5173/8080 mặc định, dùng Postgres/Keycloak dùng chung sẵn có (đã seed
+   `price_list`/`rule_set`/`Customer` từ D-031/S2-T6). Trước khi viết
+   assertion Playwright, gọi thật `POST /api/pricing/calculate` qua `curl`
+   (Product `BRK-PAD-NEW-001` id=2, Customer `CUST-OEM-001` id=31,
+   `entityDefId=2`) để lấy đúng số liệu thật (list price 55.00 → OEM tier
+   discount -8.25 → final 46.75) thay vì đoán công thức D-031's "50 + 5*index".
+Lý do: theo đúng "agent không đứng chờ" — mọi lựa chọn trên có thể làm ngay
+với API/dữ liệu đã có; điểm cần ý kiến PO đã gắn NEEDS-PO-REVIEW cụ thể,
+không chặn hoàn thành task.
+Hệ quả: `web/` thêm `src/pricing/{types,pricingApi,PriceWaterfallScreen}.tsx`
++ test; sửa `src/configurator/VehiclePartSelectionScreen.tsx` (render
+`PriceWaterfallScreen` khi có `selectedProduct`) + test (mock thêm
+`entitiesApi.fetchEntities`, nới `mockFetchInstances` trả trang rỗng cho
+entityDefCode không liên quan thay vì throw); sửa `src/entities/types.ts`
+(+id) + `EntitiesList.test.tsx` fixture. `e2e/tests/vehicle-part-selection.spec.ts`
+mở rộng tiếp tục từ "Chọn part này" sang chọn Customer + assert waterfall
+thật. Không ảnh hưởng ranh giới core/domain mới ngoài điểm 7 đã giải thích.
+Verify: `npm run test` (Vitest, `web/`) — 5 test file/21 test pass (bao gồm
+5 test mới `PriceWaterfallScreen.test.tsx`, không regress 16 test cũ);
+`npm run lint` sạch; `npm run build` thành công. Playwright (`e2e/`, `npx
+playwright test`) trên stack thật (Postgres/Keycloak dùng chung sẵn có,
+`./gradlew :app:bootRun` + `npm run dev` riêng từ worktree này) — 2/2 test
+pass, chạy 2 lần liên tiếp, cả 2 lần xanh (bao gồm bước mới: chọn Customer
+OEM thật → waterfall đúng 55.00 → -8.25 → 46.75). Mọi tiến trình
+`bootRun`/`vite` do task này khởi động đã dừng sạch sau verify (`lsof -i
+:8080 -i :5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.

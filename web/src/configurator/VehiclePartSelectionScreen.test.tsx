@@ -5,6 +5,7 @@ import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as catalogApi from '../catalog/catalogApi'
 import type { EntityInstancePageDto } from '../catalog/types'
+import * as entitiesApi from '../entities/entitiesApi'
 import * as configuratorApi from '../configurator/configuratorApi'
 import { VehiclePartSelectionScreen } from './VehiclePartSelectionScreen'
 
@@ -78,16 +79,24 @@ function renderScreen(ui: ReactElement = <VehiclePartSelectionScreen accessToken
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
 
+const EMPTY_PAGE: EntityInstancePageDto = {
+  content: [],
+  page: 0,
+  size: 100,
+  totalElements: 0,
+  totalPages: 0,
+}
+
 async function mockFetchInstances(
   byEntityDefCode: Partial<Record<string, EntityInstancePageDto>>,
 ) {
   vi.spyOn(catalogApi, 'fetchInstances').mockImplementation(
     async (_accessToken: string, entityDefCode: string) => {
-      const page = byEntityDefCode[entityDefCode]
-      if (!page) {
-        throw new Error(`unexpected entityDefCode in test: ${entityDefCode}`)
-      }
-      return page
+      // Falls back to an empty page (not a throw) for entityDefCode this
+      // test doesn't care about — e.g. "Customer", which the nested S2-T13
+      // PriceWaterfallScreen (web/src/pricing/PriceWaterfallScreen.tsx)
+      // queries once a part is selected, outside this test file's concern.
+      return byEntityDefCode[entityDefCode] ?? EMPTY_PAGE
     },
   )
 }
@@ -95,6 +104,11 @@ async function mockFetchInstances(
 describe('VehiclePartSelectionScreen', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    // S2-T13's PriceWaterfallScreen (nested once a part is selected) calls
+    // GET /api/entities to resolve Product's entityDefId — not this test
+    // file's concern, so a safe empty default here keeps those render
+    // paths from making a real network call.
+    vi.spyOn(entitiesApi, 'fetchEntities').mockResolvedValue([])
   })
 
   it('shows the full Product catalog by default when no vehicle has been chosen yet, with a hint to pick one', async () => {

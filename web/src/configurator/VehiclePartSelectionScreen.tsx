@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react'
 import { fetchInstances, fetchSupersededBy } from '../catalog/catalogApi'
 import { InstanceTable } from '../catalog/InstanceTable'
 import type { EntityInstanceSummary } from '../catalog/types'
+import { PriceWaterfallScreen } from '../pricing/PriceWaterfallScreen'
 import { fetchCompatibleInstances } from './configuratorApi'
 
 interface VehiclePartSelectionScreenProps {
@@ -239,6 +240,12 @@ export function VehiclePartSelectionScreen({ accessToken }: VehiclePartSelection
           </Alert>
         )}
       </Box>
+
+      {/* S2-T13: nối tiếp "Chọn part này" ở trên — màn giá/waterfall
+          cho đúng Product đã chọn, không cần router riêng (docs/decisions.md). */}
+      {selectedProduct && (
+        <PriceWaterfallScreen accessToken={accessToken} product={selectedProduct} />
+      )}
     </Stack>
   )
 }

@@ -20,6 +20,7 @@ describe('EntitiesList', () => {
   it('renders the real entity definitions returned by GET /api/entities (not mocked data baked into the component)', async () => {
     const fetchEntitiesSpy = vi.spyOn(entitiesApi, 'fetchEntities').mockResolvedValue([
       {
+        id: 1,
         code: 'SampleWidget',
         label: 'Sample Widget',
         version: 1,

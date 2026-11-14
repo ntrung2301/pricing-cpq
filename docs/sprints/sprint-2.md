@@ -459,10 +459,44 @@ Dùng git worktree riêng cho task chạy song song (`superpowers:using-git-work
 
 ### S2-T13 — UI tối thiểu: giá + waterfall
 - **Người phụ trách**: frontend-dev
-- **Phụ thuộc**: S2-T9, S2-T11
+- **Phụ thuộc**: S2-T9, S2-T11 (+ S2-T13-prereq seed pricing data, D-033
+  entity_def.id)
 - **Việc làm**: Màn hình hiện giá cuối + bảng waterfall cho 1 part đã chọn
   (theo wireframe màn hình 03), chọn Customer demo để thấy giá đổi theo
   tier.
+- **Trạng thái**: Done (2026-11-14, frontend-dev). `web/src/pricing/
+  PriceWaterfallScreen.tsx` render ngay dưới "Đã chọn: ..." của
+  `VehiclePartSelectionScreen` (S2-T9) khi đã chọn 1 Product — không route
+  riêng (D-034 điểm 1). Dropdown "Khách hàng" (`GET
+  /api/catalog/Customer/instances`) + input "Số lượng" (mặc định 1) + input
+  tuỳ chọn "Giá hợp đồng riêng"; `POST /api/pricing/calculate` tự gọi lại
+  (TanStack Query, không cần nút riêng) mỗi khi 1 trong các giá trị trên
+  đổi, dùng `ruleSetCode=AUTOMOTIVE-STANDARD`/`priceListCode=AUTOMOTIVE-DEFAULT`
+  (seed D-031) + `entityDefId` tra qua `GET /api/entities` (nay có `id`,
+  D-033). Bảng waterfall generic (Bước/Điều chỉnh/Sau bước này từ
+  `WaterfallStepSummary`) + "Giá cuối" + "Số lượng × Giá cuối". Edge case:
+  hint "Chọn khách hàng để tính giá" khi chưa chọn Customer (chưa gọi API);
+  "Đang tính giá..." khi loading; 1 banner lỗi generic (Alert + "Thử lại")
+  cho mọi lỗi tính giá (không phân 2 loại thông báo như wireframe gốc —
+  NEEDS-PO-REVIEW nhẹ, chi tiết D-034 điểm 3). Không làm cảnh báo margin
+  guardrail riêng/nút "Áp dụng vào quote" (ngoài scope). Chi tiết đầy đủ
+  các quyết định đơn giản hoá: D-034 (`docs/decisions.md`).
+  **Verify**: `npm run test` (Vitest, `web/`) — 5 test file/21 test pass
+  (`PriceWaterfallScreen.test.tsx` 5/5 mới, không regress 16 test cũ
+  S2-T9); `npm run lint` sạch; `npm run build` thành công. **Playwright
+  E2E thật, không mock** (mở rộng `e2e/tests/vehicle-part-selection.spec.ts`
+  tiếp tục từ "Chọn part này"): login → chọn Camry → "Tìm part tương
+  thích" → "Chọn part này" (BRK-PAD-NEW-001) → chọn Customer thật
+  "Acme Motors OEM Division" (CUST-OEM-001, tier OEM) → thấy waterfall
+  thật đúng số liệu đã verify trực tiếp qua `curl` trước khi viết test
+  (list price 55.00 → OEM tier discount -8.25 → final 46.75, theo công
+  thức demo D-031 "50 + 5×index" cho `BRK-PAD-NEW-001`). Chạy trên stack
+  thật (Postgres/Keycloak dùng chung sẵn có, `./gradlew :app:bootRun` +
+  `npm run dev` riêng từ worktree này) — `npx playwright test` 2/2 pass,
+  chạy 2 lần liên tiếp, cả 2 lần xanh. Mọi tiến trình `bootRun`/`vite` do
+  task này khởi động đã dừng sạch sau verify (`lsof -i :8080 -i :5173`
+  rỗng); container Postgres/Keycloak dùng chung vẫn chạy. PR:
+  `sprint2-s2-t13-pricing-waterfall` → `main`, chưa merge.
 - **Done khi**: Chạy local, chọn xe → part → customer → thấy giá + waterfall
   thật, không mock.
 
