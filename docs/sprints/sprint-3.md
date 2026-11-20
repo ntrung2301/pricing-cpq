@@ -104,6 +104,17 @@ task chạy song song (`superpowers:using-git-worktrees`).
   đó là S3-T4); test ≥2 dòng ambiguous không `take_first` → lỗi rõ; dữ
   liệu nguồn đổi sau khiến binding từng đúng ra ambiguous → lỗi ngay lúc
   tính lại, không lặng lẽ sai.
+- **Trạng thái: Done** (2026-11-20, backend-dev). Migration
+  `V10__calculation_binding.sql`; enum (`core-pricing/dag`) +
+  JPA entity (`core-pricing/persistence`) cho
+  `calculation_binding`/`_filter`/`_sort`; `QueryNodeExecutor` +
+  `AppDagNodeExecutors` + `CalculationBindingAmbiguousException`
+  (`app/.../pricing/dag`, package mới). 11 test tích hợp
+  (`QueryNodeExecutorIT`, Testcontainers, entity giả định) + 3 unit test
+  (`CalculationBindingFilterOperatorTest`) — toàn bộ pass. Quyết định chi
+  tiết (bake anchor vào config node — hướng (a), khoá tra cứu binding qua
+  `attribute_code`, throw rõ cho REQUEST_PARAM...): `docs/decisions.md`
+  D-042. Chưa làm: `measure-ref` (S3-T5), API HTTP (S3-T6).
 
 ### S3-T4 — Seed demo: CostHistory, MarginThreshold, Product mở rộng
 - **Người phụ trách**: backend-dev

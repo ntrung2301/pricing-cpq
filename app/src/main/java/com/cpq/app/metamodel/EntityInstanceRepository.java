@@ -45,6 +45,21 @@ public interface EntityInstanceRepository extends JpaRepository<EntityInstance, 
     Optional<EntityInstance> findByEntityDefinition_CodeAndBusinessKey(String code, String businessKey);
 
     /**
+     * Added for S3-T3 (E8-03b, ADR-009 mục 3): the {@code query} DagNode's
+     * {@code EXTENSION} auto-match — every {@code entity_instance} of
+     * {@code source_entity_code} whose {@code anchor_instance_id} equals
+     * the anchor instance currently being calculated, before Calculation
+     * Binding filter/sort/take-first is applied (see
+     * {@code com.cpq.app.pricing.dag.QueryNodeExecutor}). Ordered by
+     * {@code id} ascending for the same reason as {@link
+     * #findByEntityDefinition_CodeOrderByIdAsc} — a deterministic base
+     * order before filter/sort narrows the candidate set, rather than
+     * relying on unspecified row order.
+     */
+    List<EntityInstance> findByEntityDefinition_CodeAndAnchorInstanceOrderByIdAsc(
+            String code, EntityInstance anchorInstance);
+
+    /**
      * Added for S2-T9-prereq (docs/decisions.md D-030): paginated listing
      * of every {@code entity_instance} row of one entity_def (no search
      * filter), used by {@code EntityInstanceQueryServiceImpl} for {@code
