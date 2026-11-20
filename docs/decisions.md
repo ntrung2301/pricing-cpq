@@ -1695,3 +1695,84 @@ stack thật, cả 2 lần 3/3 pass; `./gradlew :core-pricing:test` riêng cho 4
 class sandbox/determinism liên quan — pass lại, 0 fail. Mọi tiến trình
 `bootRun`/`vite` do task này khởi động đã dừng sạch (`lsof -i :8080 -i
 :5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.
+
+## D-039 — S3-T2: DAG execution engine generic (core-pricing/dag) (2026-11-20, backend-dev)
+Quyết định:
+1. **Đặt engine mới trong module `core-pricing` có sẵn**, package mới
+   `com.cpq.core.pricing.dag` — không tạo module Gradle riêng. Lý do: DAG
+   engine tái dùng trực tiếp `JsonLogicEvaluator` (node `formula`) và cùng
+   nguyên tắc BigDecimal/determinism với `RuleEngine` Sprint 2 đang nằm
+   trong `core-pricing`; tách module riêng (vd `core-pricing-dag`) chỉ thêm
+   chi phí wiring Gradle mà không giải quyết vấn đề thiết kế nào — ranh
+   giới cần giữ là *song song, không migrate*, không phải tách module.
+   `RuleEngine`/`PricingStage`/`PricingContext` (Sprint 2) **không bị
+   đụng** — đúng yêu cầu task, ADR-009 chưa quyết migrate.
+2. **`JsonLogicEvaluator` (core-pricing/dsl) được mở rộng ngay trong class
+   cũ** (thêm operator `+ - * /` + 1 method `public static BigDecimal
+   evaluateNumeric(JsonNode, Map)`), không viết parser mới, theo đúng
+   ADR-009 mục 4. Đổi `final class` → `public final class` (chỉ để class
+   gọi được từ package `dag` khác) — các method cũ (`test`) giữ nguyên
+   package-private, không đổi API hiện có, không ảnh hưởng
+   `DslRuleExecutor`/`DslRuleExecutorTest` (S2-T10, D-023). Scale nội bộ
+   cho `/` chọn là 10 (`RoundingMode.HALF_UP`) — ADR-009 không ép 1 scale
+   cụ thể cho formula (khác hẳn `DslRuleExecutor`'s `INTERNAL_SCALE=6` cho
+   waterfall step cuối, vì đầu ra formula còn truyền tiếp cho node khác,
+   ví dụ `round`, chưa phải giá trị hiển thị cuối) — **NEEDS-PO-REVIEW**
+   nhẹ: xác nhận lại scale này khi Price List thật (S3-T6/T7) lộ ra yêu
+   cầu cụ thể hơn, không chặn S3-T2.
+3. **Topological sort**: Kahn's algorithm cổ điển (in-degree + queue, xem
+   `DagEngine.topologicalSort`), không dùng biến thể "quét nhiều lớp" —
+   O(V+E), xác định rành (insertion-order `LinkedHashSet`/`LinkedHashMap`
+   mọi nơi) nên cùng graph luôn ra cùng thứ tự thực thi, không phụ thuộc
+   `HashMap` iteration order. Cycle (kể cả self-loop 1 node) phát hiện
+   bằng `sorted.size() != nodes.size()` sau khi queue rỗng → throw
+   `DagCycleException("Graph has a cycle, not a valid DAG")` đúng message
+   task yêu cầu. Tham chiếu input tới node id không tồn tại trong graph →
+   lỗi riêng `DagValidationException` (không lẫn với cycle) ngay lúc dựng
+   dependency set, trước khi chạy sort.
+4. **Node type registry là `Map<String, DagNodeExecutor>` truyền vào
+   `DagEngine` qua constructor**, không hardcode trong engine.
+   `DagNodeExecutors.standard()` là bộ 4 type hữu hạn cho production
+   (`formula`/`weighted-average`/`round`/`output` — đúng scope S3-T2,
+   không có `query`). Test engine (graph "query-giả-lập → weighted-average
+   → formula → round → output" theo yêu cầu Done-khi) tự định nghĩa thêm 1
+   `DagNodeExecutor` tên `literal` (đứng thay `query` thật, trả thẳng
+   `config.get("value")`) và gộp vào registry chỉ trong test — không thêm
+   vào `DagNodeExecutors.standard()`, không rò rỉ vào production, nhưng
+   minh chứng engine thật sự generic theo registry truyền vào, không phải
+   hardcode 4 type trong code engine.
+5. **Model bất biến**: `DagNode`/`TraceEntry`/`DagExecutionResult` là
+   record, `config`/`inputs`/`resolvedInputs`/`results` đều copy phòng vệ
+   sang `Collections.unmodifiableMap` lúc construct (chịu được giá trị
+   `null`, khác `Map.copyOf` chặn null) — khớp yêu cầu "không loop, không
+   biến mutable trong model" của ADR-009.
+Lý do: Theo đúng chỉ dẫn task S3-T2 (dựa ADR-009 mục 2, D-037/D-038,
+backlog E8-03 phần node generic, sprint-3.md S3-T2) — các lựa chọn trên là
+các điểm "tự quyết hợp lý, ghi lý do" theo CLAUDE.md mục 6 (không có trong
+ADR-009 đủ chi tiết để suy ra máy móc: vị trí module, scale division nội
+bộ, biến thể Kahn's cụ thể, cách test giả lập `query` khi chưa có node đó).
+Hệ quả:
+- `core-pricing/src/main/java/com/cpq/core/pricing/dag/` (mới):
+  `DagNode`, `DagNodeExecutor`, `DagNodeExecutors`, `FormulaNodeExecutor`,
+  `WeightedAverageNodeExecutor`, `RoundNodeExecutor`, `OutputNodeExecutor`,
+  `TraceEntry`, `DagExecutionResult`, `DagEngine`, `DagValidationException`,
+  `DagCycleException`.
+- `core-pricing/src/main/java/com/cpq/core/pricing/dsl/JsonLogicEvaluator.java`
+  mở rộng (xem mục 2 trên).
+- Chưa làm: node `query` (S3-T3, phụ thuộc S3-T1 + task này), `measure-ref`
+  (S3-T5), API HTTP cho engine mới (chưa có route — S3-T6 mới cần expose
+  qua Price List API, S3-T2 chỉ là engine thuần Java, không có controller).
+- **NEEDS-PO-REVIEW (ghi chú merge)**: branch này (`sprint3-s3-t2-dag-engine`)
+  tách từ 1 điểm commit mà `docs/sprints/sprint-3.md` và D-037/D-038 (ADR-009
+  implementation plan) chỉ mới tồn tại ở working tree của checkout chính
+  (chưa commit vào git lúc branch tách), nên không có trong lịch sử mà
+  worktree kế thừa. `docs/sprints/sprint-3.md` được tái tạo nguyên văn
+  trong branch này (xem note cuối file đó) để cập nhật mục S3-T2 — PR
+  review cần merge thủ công với bản của nhánh `sprint3-s3-t1-entity-
+  taxonomy-v2` (tách cùng điểm, nhiều khả năng cũng tái tạo file tương tự).
+  Số hiệu quyết định này giả định D-037 (ADR-009)/D-038 (implementation
+  plan) đã tồn tại trên lịch sử chính thức — nếu nhánh khác cũng dùng
+  "D-039", người review đổi số 1 trong 2 cho không trùng.
+Verify: `./gradlew :core-pricing:test` — 30 test mới (toàn bộ package
+`dag` + `JsonLogicEvaluatorTest`) pass, 0 fail/error; `./gradlew build`
+(toàn repo) — xem báo cáo cuối task cho output đầy đủ.

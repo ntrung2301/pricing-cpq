@@ -3,24 +3,48 @@ package com.cpq.core.pricing.dsl;
 import com.cpq.core.pricing.RuleDefinitionRejectedException;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
- * Minimal evaluator for the JsonLogic-flavoured condition grammar ADR-002
- * specifies for {@code rule_type: DSL}: {@code ==, !=, >, >=, <, <=, in,
+ * Minimal evaluator for the JsonLogic-flavoured grammar ADR-002 specifies
+ * for {@code rule_type: DSL} conditions: {@code ==, !=, >, >=, <, <=, in,
  * and, or, not}, plus {@code {"var": "name"}} variable lookup. Three
  * reserved variable names resolve to {@link com.cpq.core.pricing.PricingContext}
  * fields directly ({@code quantity}, {@code basePrice}, {@code
  * currentAmount}); any other name is looked up in {@code attributes}.
  *
+ * <p>ADR-009 mục 4 (S3-T2) extends this same parser/dispatch — not a
+ * rewrite — to also compute a numeric ({@link BigDecimal}) result via the
+ * arithmetic operators JsonLogic already defines ({@code + - * /}), for use
+ * by the DAG engine's {@code formula} node. {@link #test} (boolean,
+ * conditions) and {@link #evaluateNumeric} (BigDecimal, values) both go
+ * through the same {@code evaluate}/{@code applyOperator} dispatch below —
+ * only the operator set and the expected result type differ.
+ *
  * <p>Deliberately NOT a general JsonLogic implementation (no {@code map},
- * {@code reduce}, string concatenation, arithmetic operators, etc.) — only
- * what a pricing rule condition needs, per ADR-002's choice of "vay mượn
- * ngữ pháp operator của JsonLogic cho phần condition" rather than adopting
- * the full spec/library.
+ * {@code reduce}, string concatenation, etc.) — only what a pricing rule
+ * condition or a DAG formula node needs, per ADR-002/ADR-009's choice of
+ * "vay mượn ngữ pháp operator của JsonLogic" rather than adopting the full
+ * spec/library.
  */
-final class JsonLogicEvaluator {
+public final class JsonLogicEvaluator {
+
+    /**
+     * Internal scale for {@code "/"} division results (ADR-009 mục 4 does
+     * not mandate a specific scale for generic DAG arithmetic — unlike
+     * {@code DslRuleExecutor}'s rule-action waterfall, a formula node's
+     * output commonly feeds into further nodes, e.g. {@code round}, which
+     * do their own scale/rounding, so this only needs to be "enough
+     * precision to not lose information before the next node", not a
+     * final display scale). Chosen as a reasonable default (NEEDS-PO-REVIEW
+     * if a different convention emerges once Price List formulas are built
+     * for real in S3-T6/T7) — see docs/decisions.md D-039.
+     */
+    private static final int ARITHMETIC_SCALE = 10;
 
     private JsonLogicEvaluator() {}
 
@@ -35,6 +59,18 @@ final class JsonLogicEvaluator {
         }
         throw new RuleDefinitionRejectedException(
                 "DSL condition did not evaluate to a boolean: " + conditions);
+    }
+
+    /**
+     * Evaluates an expression node to a {@link BigDecimal} (ADR-009 mục 4,
+     * S3-T2 DAG {@code formula} node). Same parser/dispatch as {@link
+     * #test} — only the operator set is wider ({@code + - * /} in addition
+     * to the existing comparison/boolean operators) and the result is
+     * coerced to {@link BigDecimal} instead of {@code boolean}.
+     */
+    public static BigDecimal evaluateNumeric(JsonNode expression, Map<String, Object> variables) {
+        Object result = evaluate(expression, variables);
+        return toBigDecimal(result);
     }
 
     private static Object evaluate(JsonNode node, Map<String, Object> variables) {
@@ -75,12 +111,70 @@ final class JsonLogicEvaluator {
             case "or" -> evaluateAny(args, variables);
             case "not", "!" -> !asBoolean(evaluate(singleArg(args), variables));
             case "in" -> evaluateIn(args, variables);
+            case "+" -> sumArgs(args, variables);
+            case "-" -> subtractArgs(args, variables);
+            case "*" -> multiplyArgs(args, variables);
+            case "/" -> divideArgs(args, variables);
             default -> throw new RuleDefinitionRejectedException("Unsupported DSL operator: " + operator);
         };
     }
 
     private static JsonNode singleArg(JsonNode args) {
         return args.isArray() ? args.get(0) : args;
+    }
+
+    private static List<JsonNode> argsArray(JsonNode args) {
+        List<JsonNode> list = new ArrayList<>();
+        if (args.isArray()) {
+            args.forEach(list::add);
+        } else {
+            list.add(args);
+        }
+        return list;
+    }
+
+    private static BigDecimal sumArgs(JsonNode args, Map<String, Object> variables) {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (JsonNode arg : argsArray(args)) {
+            sum = sum.add(toBigDecimal(evaluate(arg, variables)));
+        }
+        return sum;
+    }
+
+    private static BigDecimal subtractArgs(JsonNode args, Map<String, Object> variables) {
+        List<JsonNode> list = argsArray(args);
+        if (list.isEmpty()) {
+            throw new RuleDefinitionRejectedException("\"-\" requires at least 1 argument");
+        }
+        BigDecimal result = toBigDecimal(evaluate(list.get(0), variables));
+        if (list.size() == 1) {
+            return result.negate();
+        }
+        for (int i = 1; i < list.size(); i++) {
+            result = result.subtract(toBigDecimal(evaluate(list.get(i), variables)));
+        }
+        return result;
+    }
+
+    private static BigDecimal multiplyArgs(JsonNode args, Map<String, Object> variables) {
+        BigDecimal product = BigDecimal.ONE;
+        for (JsonNode arg : argsArray(args)) {
+            product = product.multiply(toBigDecimal(evaluate(arg, variables)));
+        }
+        return product;
+    }
+
+    private static BigDecimal divideArgs(JsonNode args, Map<String, Object> variables) {
+        List<JsonNode> list = argsArray(args);
+        if (list.size() != 2) {
+            throw new RuleDefinitionRejectedException("\"/\" requires exactly 2 arguments");
+        }
+        BigDecimal dividend = toBigDecimal(evaluate(list.get(0), variables));
+        BigDecimal divisor = toBigDecimal(evaluate(list.get(1), variables));
+        if (divisor.compareTo(BigDecimal.ZERO) == 0) {
+            throw new RuleDefinitionRejectedException("Division by zero in DSL arithmetic expression");
+        }
+        return dividend.divide(divisor, ARITHMETIC_SCALE, RoundingMode.HALF_UP);
     }
 
     private static Object resolveVariable(JsonNode args, Map<String, Object> variables) {
