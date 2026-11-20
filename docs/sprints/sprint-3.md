@@ -119,6 +119,16 @@ task chạy song song (`superpowers:using-git-worktrees`).
   nhất 1 SKU có ≥3 dòng `CostHistory`.
 - **Done khi**: Done-khi của E8-02 — chạy app thật, query ra đủ dữ liệu
   không phải test fixture.
+- **Trạng thái**: Done (2026-11-20, backend-dev). `pack.yaml` thêm
+  `Product.country_of_manufacture` + entity `CostHistory`
+  (`role: EXTENSION`)/`MarginThreshold` (`role: PARAMETER`); seed thật qua
+  `PricingTaxonomyDemoSeedRunner` (mới) — `BRK-PAD-NEW-001` có 3 dòng
+  `CostHistory` (period 2026-09/10/11), `MarginThreshold` đủ 4 mức,
+  `country_of_manufacture` có giá trị cho `BRK-PAD-NEW-001`
+  (Vietnam)/`OIL-FLT-NEW-010` (Taiwan). Phát hiện + vá 1 bug ẩn trong
+  `PackLoaderService.applyExtension` (có từ S3-T1, chặn `./gradlew build`)
+  — xem D-042. `./gradlew build` pass toàn bộ, không regress Sprint
+  1/2/S3-T1. PR: branch `sprint3-s3-t4-seed-demo-data`, chưa merge.
 
 ### S3-T5 — Measure: subgraph tái dùng
 - **Người phụ trách**: backend-dev

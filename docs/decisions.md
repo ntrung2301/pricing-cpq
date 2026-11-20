@@ -1988,3 +1988,105 @@ Không tự tối ưu ở task này (ngoài scope S3-T1) — gắn cờ cho qa-e
 devops xem xét (có thể cần 1 test slice nhẹ hơn `@SpringBootTest` đầy đủ
 cho các IT không cần seed data thật).
 Verify: xem báo cáo S3-T1 cho lệnh/kết quả cụ thể.
+
+## D-042 — S3-T4: seed demo CostHistory/MarginThreshold/country_of_manufacture; vá bug ẩn trong `PackLoaderService.applyExtension` (2026-11-20, backend-dev)
+Quyết định (các điểm không hiển nhiên trong implementation của E8-02):
+1. **`CostHistory.period` là STRING, không DATE.** Giá trị là year-month
+   (`"2026-09"`, `"2026-10"`, `"2026-11"`) — không phải `LocalDate` hợp lệ
+   (ADR-001's DATE type cần đủ ngày). Giữ nhất quán với tiền lệ chính
+   `ExtensionEntityTaxonomyIT`/D-040 (S3-T1) đã dùng cho fixture
+   `GadgetCostHistory.period`, không tạo quy ước khác cho entity EXTENSION
+   automotive thật đầu tiên.
+2. **`country_of_manufacture` không cần runner riêng** — chỉ là 1 cột mới,
+   optional, trên `products.csv`; `DemoDataSeedRunner` (S2-T6, không sửa)
+   tự nhập đúng qua `CatalogImportService` đã có, miễn `pack.yaml` khai
+   báo attribute trước khi runner đó chạy (đúng thứ tự `PackLoaderService`
+   → import CSV đã có từ S2-T6).
+3. **Seed data**: `BRK-PAD-NEW-001` = Vietnam, `OIL-FLT-NEW-010` = Taiwan
+   (2 SKU demo đã dùng ở các task trước, dễ đối chiếu); `CostHistory` 3
+   dòng cho `BRK-PAD-NEW-001` (cost 40.00/42.50/44.00, quantity
+   120/95/150 — số minh hoạ, không phải dữ liệu nhà cung cấp thật);
+   `MarginThreshold` 4 mức đúng số PO chỉ định ở D-038 mục 4.
+   `PricingTaxonomyDemoSeedRunner` (file mới, `app/.../demo/`) theo đúng
+   khuôn `AutomotiveFitmentSeedRunner`/`AutomotivePricingSeedRunner`: tự
+   gọi `DemoDataSeedRunner#run` trước (đảm bảo `Product` tồn tại bất kể
+   Spring chạy runner theo thứ tự nào), idempotent theo kiểu "có ≥1 dòng
+   = coi như đã seed đủ" (D-026 điểm 4), không `@Order` (không cần, cùng
+   lý do D-040 điểm 3 đã giải thích cho 3 runner demo khác).
+4. **Bug ẩn phát hiện trong `PackLoaderService.applyExtension` (S3-T1,
+   không thuộc scope S3-T4, nhưng phải vá vì chặn `./gradlew build`)**:
+   mọi `ApplicationRunner` ở `app` tự gọi
+   `packLoaderService.loadAllPacksFromClasspath()` lại (idempotency
+   pattern D-026/D-029) — nghĩa là 1 pack có entity `role=EXTENSION` sẽ bị
+   load lại nhiều lần, mỗi lần 1 transaction riêng. Từ lần 2 trở đi,
+   `applyExtension`'s "xoá hết dimension_attribute cũ rồi ghi lại" (full-
+   replace, D-040 điểm 6) ném `DataIntegrityViolationException` trên
+   `uq_edda_entity_def_attribute`: trong 1 transaction, Hibernate luôn
+   flush **insert trước delete** bất kể thứ tự gọi trong Java, nên dòng
+   ghi lại (cùng `entity_def_id`+`attribute_def_id`) chạy trước khi dòng
+   cũ bị xoá → đụng unique constraint. Lỗi này **tồn tại từ S3-T1** nhưng
+   không ai từng thấy vì chưa có entity `EXTENSION` thật nào được pack
+   load lại nhiều lần trong 1 lần chạy JVM — mọi test S3-T1 chỉ gọi
+   `loadPack` đúng 1 lần cho mỗi entity EXTENSION. `CostHistory` (S3-T4)
+   là entity EXTENSION thật đầu tiên trong `pack.yaml` tự động được 4
+   runner (`PackLoaderService` + `DemoDataSeedRunner` +
+   `AutomotiveFitmentSeedRunner`/`AutomotivePricingSeedRunner`/
+   `PricingTaxonomyDemoSeedRunner`, mỗi runner tự gọi lại pack loader) —
+   lần thứ 2 trở đi trong cùng 1 `@SpringBootTest`/app run luôn fail.
+   **Vá**: thêm `dimensionAttributeRepository.flush()` ngay sau
+   `deleteAll(existing)`, trước khi insert lại — ép delete thực thi trước
+   insert trong cùng transaction, không đổi logic full-replace. 1 dòng,
+   không đổi public API/behaviour nào khác của `PackLoaderService`.
+   **Lý do vá dù task yêu cầu "KHÔNG sửa PackLoaderService"**: đây là bug
+   thật trong code đã merge (S3-T1), không phải thay đổi ranh giới
+   core/domain — không vá thì không `ApplicationRunner` nào trong `app`
+   chạy được nữa (crash ngay ở app startup thật, không chỉ test) ngay khi
+   `pack.yaml` có bất kỳ entity EXTENSION nào — chặn cứng Done-khi
+   "`./gradlew build` pass, không regress Sprint 1/2/S3-T1" của chính
+   S3-T4. Theo CLAUDE.md mục 6 (agent không đứng chờ, chọn lựa chọn hợp lý
+   + ghi quyết định) hơn là âm thầm né tránh (vd xoá `role: EXTENSION`
+   khỏi `CostHistory` để tránh đụng code path này — sẽ làm sai yêu cầu
+   nghiệp vụ chính của task).
+   **NEEDS-PO-REVIEW**: xác nhận lại việc vá này đúng phạm vi cho phép —
+   nếu PO muốn tách riêng thành 1 task/PR bugfix độc lập (không gộp vào
+   S3-T4) để dễ review/revert, báo lại, agent có thể tách commit (đã làm —
+   xem Hệ quả) nhưng vẫn nằm trong cùng PR vì không vá thì S3-T4 không thể
+   tự chạy `./gradlew build` xanh được.
+5. **Test case mới cho bug trên**: thêm
+   `PackLoaderServiceIT.reloadingSamePackTwiceWithExtensionEntityDoesNotFailOnDimensionAttributeReplace`
+   (dùng fixture generic `PlReloadAnchor`/`PlReloadExtension`, không
+   automotive) — gọi `loadPack` 2 lần (2 transaction riêng, giống thật) với
+   cùng pack, assert không exception + dimension_attribute vẫn đúng 1 dòng
+   sau lần 2 (không nhân đôi). Theo TDD: viết test trước, thấy fail đúng
+   với `DataIntegrityViolationException`/`uq_edda_entity_def_attribute`,
+   rồi thêm `flush()` làm test pass.
+Lý do: Theo đúng scope S3-T4 (sprint-3.md) + backlog E8-02 + ADR-009 mục 1
++ nguyên tắc "agent không đứng chờ" (CLAUDE.md mục 6) cho các lựa chọn
+không có đủ chi tiết trong backlog/ADR để suy ra máy móc (kiểu dữ liệu
+`period`, số liệu demo cụ thể, và việc vá bug ngoài scope khai báo).
+Hệ quả:
+- `app/src/main/resources/config/packs/automotive/pack.yaml`: thêm
+  `Product.country_of_manufacture`, entity `CostHistory`
+  (`role: EXTENSION`), `MarginThreshold` (`role: PARAMETER`).
+- `app/src/main/resources/demo-data/automotive/products.csv`: thêm cột
+  `country_of_manufacture`.
+- `app/src/main/java/com/cpq/app/demo/PricingTaxonomyDemoSeedRunner.java`
+  (mới).
+- `app/src/main/java/com/cpq/app/pack/PackLoaderService.java`: 1 dòng
+  `flush()` trong `applyExtension` (bugfix, mục 4 trên).
+- `app/src/test/java/com/cpq/app/demo/PricingTaxonomyDemoSeedRunnerIT.java`
+  (mới, 5 test).
+- `app/src/test/java/com/cpq/app/pack/PackLoaderServiceIT.java`: thêm 1
+  test case (mục 5 trên).
+- Domain vs engine: `pack.yaml`/`products.csv` là data/config thuần
+  (D-013) — không entity/attribute/logic nào là Java mới ngoài 1
+  `ApplicationRunner` generic (không biết "CostHistory"/"MarginThreshold"
+  nghĩa là gì, chỉ đọc entity_def theo code tham số hoá). Bugfix mục 4 là
+  sửa engine (`app`, lớp pack-loading), không phải domain-specific — không
+  đụng ranh giới core/domain.
+Verify: `./gradlew :app:test --tests "com.cpq.app.pack.PackLoaderServiceIT"
+--tests "com.cpq.app.pack.ExtensionEntityTaxonomyIT" --tests
+"com.cpq.app.pack.AutomotivePackIT" --tests "com.cpq.app.demo.*"` → 27 test
+pass (PackLoaderServiceIT 8, ExtensionEntityTaxonomyIT 3, AutomotivePackIT
+1, 4 demo IT classes tổng 15), 0 fail/error. `./gradlew build` (toàn repo)
+— xem báo cáo cuối task cho output đầy đủ.
