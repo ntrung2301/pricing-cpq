@@ -1696,6 +1696,74 @@ class sandbox/determinism liên quan — pass lại, 0 fail. Mọi tiến trình
 `bootRun`/`vite` do task này khởi động đã dừng sạch (`lsof -i :8080 -i
 :5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.
 
+## D-036 — Dùng Ant Design cho frontend (2026-11-17, PO)
+
+Theo yêu cầu của PO, Ant Design thay thế MUI làm thư viện component trong
+`web/`, thay cho quyết định D-015. Các màn hình đăng nhập, danh mục,
+chọn xe/part và pricing waterfall dùng component Ant Design với theme
+chung qua `ConfigProvider`. Luồng Keycloak và các API hiện tại tiếp tục
+được sử dụng.
+
+## D-037 — ADR-009: Entity taxonomy mở rộng, DAG + Measure execution engine, module Price List (2026-11-20, PO)
+Quyết định: Sau Sprint 2, PO mở rộng phạm vi sản phẩm (SME pricing platform
+tuỳ biến được, không chỉ automotive MVP) và chốt kiến trúc mới qua thảo
+luận trực tiếp + 2 POC (DAG thuần, DAG có Measure tái dùng kiểu DAX) +
+1 UI mockup minh hoạ (measure canvas, context-aware theo SKU). Chi tiết đầy
+đủ: `docs/adr/0009-configurable-pricing-dag-and-price-list.md` — amend
+ADR-001 (thêm `Product`/`Customer` cố định + `ProductExtension`/
+`CustomerExtension`/`Parameter`), ADR-002 (thêm action `formula` dùng
+`JsonLogicEvaluator` cho giá trị, không chỉ điều kiện), ADR-003 (schema
+`price_list`/`price_list_item` đổi), ADR-004 (pipeline 6-stage cố định bị
+supersede bởi DAG — nguyên tắc BigDecimal/snapshot/round-trip vẫn giữ).
+Lý do: Pipeline tuyến tính cố định không đủ biểu đạt logic enterprise
+phức tạp (weighted avg cost, agreement resolution, hierarchy, currency
+conversion...) PO đưa ra làm ví dụ; nhưng visual node đầy đủ (loop/biến/
+join...) sẽ biến thành 1 ngôn ngữ lập trình thị giác, mâu thuẫn với yêu
+cầu thân thiện business user (tránh Groovy/SDK). DAG (không loop/biến
+mutable) + Measure có tên tái dùng (như DAX measure Power BI) là điểm
+trung gian: đủ mạnh, vẫn generic/data-driven, vẫn deterministic.
+Hệ quả: Rework đáng kể lên `PricingStage`/`RuleEngine`/`price_list` đã
+build Sprint 2 (xem ADR-009 mục "Hệ quả" cho danh sách đầy đủ tái dùng
+được/phải viết lại). NEEDS-PO-REVIEW: thứ tự migrate API
+`/api/pricing/calculate` hiện tại — ADR-009 không quyết, cần quyết riêng
+trước khi backend-dev bắt đầu implement. Chỉ mới thiết kế Price List;
+Promotion/Agreement và Quote-time tổng hợp nhiều element type để sau.
+
+## D-038 — Kế hoạch implementation cụ thể cho ADR-009: Epic 8, Sprint 3 mới, Ant Design, 4 bảng demo (2026-11-20, PO)
+Quyết định: Cụ thể hoá ADR-009/D-037 thành backlog + sprint thật:
+1. Thêm **Epic 8** (`docs/backlog.md`) — E8-01 (entity taxonomy v2:
+   `role`/`extends_entity_def_id`/composite key cho Extension, bootstrap
+   `Product`/`Customer` qua `CoreAnchorBootstrapService` chạy trước
+   `PackLoaderService` — không phải pack tạo 2 entity này, pack chỉ thêm
+   attribute) → E8-07 (seed Price List demo).
+2. **Sprint 3 đổi mục tiêu** (`docs/roadmap.md`): không còn "Hoàn thiện
+   MVP" (dời thành Sprint 4), tập trung Epic 8. Sprint 3 gốc → Sprint 4,
+   Sprint 4 gốc → Sprint 5 — roadmap giờ 5 sprint, không còn 4.
+   `docs/sprints/sprint-3.md` mới, task S3-T1→T9.
+3. **Frontend mới (S3-T8) dùng Ant Design** (D-036), không quay lại MUI —
+   PO xác nhận việc migrate Ant Design (D-036) chính là chuẩn bị frontend/
+   UI component cho implementation này, áp dụng luôn, không làm 2 lần.
+4. **4 bảng demo cụ thể PO chỉ định**: `Product` (Anchor, mở rộng thêm
+   `country_of_manufacture`), `Customer` (Anchor, đã có), `CostHistory`
+   (Extension của Product, dimension `period`, dùng đúng dữ liệu đã
+   verify ở POC weighted-avg-cost trong phiên thiết kế), `MarginThreshold`
+   (Parameter, key `level`, 4 mức CRITICAL<15%/RED<20%/YELLOW<30%/GREEN).
+5. **2 NEEDS-PO-REVIEW mới, chưa chặn Sprint 3, agent tự quyết default**
+   (CLAUDE.md mục 6): (a) route API engine mới (DAG) đặt tên gì, có migrate
+   `/api/pricing/calculate` cũ ngay không — default: không đụng API cũ,
+   build route mới song song, quyết migrate thật để sau; (b) Price List
+   (không có 1 customer context cụ thể) dùng `Customer` thế nào trong
+   graph demo E8-07 — default: 1 node tham chiếu/thông tin, không ảnh
+   hưởng `result_price`, chỉ chứng minh cơ chế đọc được, PO review lại kết
+   quả cụ thể sau khi implement.
+Lý do: PO yêu cầu trực tiếp "cập nhật theo hướng mới implementation cho
+Price List" kèm 4 yêu cầu cụ thể (module core rõ cho Product/Customer,
+dùng Ant Design đã migrate, output cuối sprint là data thật cho đủ 4 loại
+bảng + 1 Price List dùng được cả 4).
+Hệ quả: `docs/backlog.md` (Epic 8), `docs/roadmap.md` (Sprint 3 mới,
+Sprint 4/5 dời số), `docs/sprints/sprint-3.md` (mới) đã cập nhật. Sẵn sàng
+dispatch S3-T1/S3-T2 (không phụ thuộc gì, chạy song song được).
+
 ## D-039 — S3-T2: DAG execution engine generic (core-pricing/dag) (2026-11-20, backend-dev)
 Quyết định:
 1. **Đặt engine mới trong module `core-pricing` có sẵn**, package mới

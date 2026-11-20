@@ -174,14 +174,3 @@ S3-T1 ────────────────────────�
 ```
 
 Task không phụ thuộc gì (bắt đầu ngay, chạy song song): S3-T1, S3-T2.
-
-**Lưu ý merge (ghi bởi backend-dev, S3-T2, 2026-11-20)**: File này được tạo
-lại trong worktree của S3-T2 vì tại thời điểm branch (`sprint3-s3-t2-dag-engine`)
-tách ra, `docs/sprints/sprint-3.md`/`docs/decisions.md` D-037/D-038/
-`docs/backlog.md` Epic 8 mới chỉ tồn tại ở working tree của checkout chính
-(chưa commit), nên không có trong lịch sử git mà worktree kế thừa. Nội dung
-tái tạo ở đây lấy nguyên văn từ checkout chính lúc đọc. Branch S3-T1
-(`sprint3-s3-t1-entity-taxonomy-v2`) tách từ cùng điểm nên nhiều khả năng
-cũng tái tạo file này độc lập — PO/reviewer cần merge thủ công 2 bản khi
-duyệt PR (nội dung các mục khác giống nhau, chỉ khác phần S3-T2 đã cập
-nhật ở đây).

@@ -18,4 +18,7 @@ Mỗi ADR phải nêu rõ **hệ quả tới tính generic của engine lõi** (
 CLAUDE.md) và, nếu chọn khác tech stack mặc định, lý do rõ ràng.
 
 Thư viện PDF (OpenPDF vs JasperReports) chốt bằng ADR riêng khi vào Sprint 3
-(gần lúc cần, không cần quyết sớm ở Sprint 1) — thêm `ADR-008` khi đó.
+(gần lúc cần, không cần quyết sớm ở Sprint 1) — thêm `ADR-008` khi đó
+(**chưa viết, số 008 vẫn để dành**).
+
+| ADR-009 | `0009-configurable-pricing-dag-and-price-list.md` | Entity taxonomy mở rộng (Product/Customer cố định, Extension/Parameter), execution engine dạng DAG + Measure (thay pipeline tuyến tính ADR-004), module Price List. Viết sau Sprint 2, theo yêu cầu PO mở rộng phạm vi sản phẩm. |

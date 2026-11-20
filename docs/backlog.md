@@ -204,6 +204,129 @@ sprint (`docs/sprints/sprint-N.md`). Story ID: `EPIC-N`.
 
 ---
 
+## Epic 8 — Configurable Pricing Engine v2: Entity taxonomy, DAG + Measure, Price List [core]
+
+Theo ADR-009 (`docs/adr/0009-configurable-pricing-dag-and-price-list.md`,
+D-037) — PO mở rộng phạm vi sản phẩm sau Sprint 2 (SME pricing platform
+tuỳ biến, không chỉ automotive). **Supersede 1 phần Epic 3** (pipeline
+6-stage cố định của E3-01/E3-02 → DAG; E3-03 margin guardrail → generalize
+thành Parameter `MarginThreshold` + validation node, không còn 1 ngưỡng
+cứng). Epic 4/5 (Quote, Admin) **dời sau Epic 8**, không còn là Sprint 3.
+
+### E8-01 [core] (L) Entity taxonomy v2: role Anchor/Extension/Parameter
+- **Mô tả**: `entity_def` thêm cột `role` (`ANCHOR` | `EXTENSION` |
+  `PARAMETER`) và `extends_entity_def_id` (nullable, chỉ dùng khi
+  `EXTENSION` — trỏ tới entity_def Anchor mà nó mở rộng). `Product` và
+  `Customer` là **đúng 2 entity_def role=ANCHOR, luôn tồn tại** trong mọi
+  deployment — do 1 `CoreAnchorBootstrapService` mới (chạy TRƯỚC
+  `PackLoaderService`) tự tạo shell (`code`, `role`, `version=1`, chưa có
+  attribute) nếu chưa có, **không phải do pack.yaml khai báo tạo entity
+  mới**. Pack (automotive) vẫn là nơi duy nhất thêm attribute cụ thể
+  (`sku`, `name`...) + chỉ định `key_attribute`/`label_attribute` cho 2
+  entity này, qua đúng cơ chế upsert-by-code đã có (D-019/D-020), không
+  cần sửa logic đó.
+  - **Composite key cho Extension**: `entity_def_dimension_attribute`
+    (bảng mới: `entity_def_id, attribute_def_id, position`) — danh sách
+    attribute "chiều phụ" (vd `period`, `city`) của 1 entity Extension.
+    `entity_instance` thêm cột `anchor_instance_id` (nullable FK tới
+    `entity_instance` khác — chỉ set khi entity có role=EXTENSION, trỏ
+    tới dòng Product/Customer nó mở rộng). `business_key` của 1 Extension
+    instance = ghép `business_key` của anchor instance + giá trị các
+    dimension attribute — vẫn qua đúng cơ chế đồng bộ tự động (D-019),
+    tổng quát hoá cho trường hợp nhiều-field.
+  - `pack.yaml` (`EntityDescriptor`) thêm field `role`, `extends`,
+    `dimension_attributes[]` (chỉ dùng khi `role: EXTENSION`).
+- **Acceptance criteria**:
+  - App khởi động lần đầu (chưa pack nào chạy) → `entity_def` đã có
+    `Product`/`Customer` với `role=ANCHOR`, 0 attribute.
+  - Pack automotive nạp xong → 2 entity trên có đủ attribute + key/label,
+    **không có class Java nào hardcode field "sku"/"customerId"** (chỉ
+    core biết "đây là 2 anchor", không biết nội dung business của chúng —
+    test tích hợp xác nhận bằng cách nạp pack tổng hợp khác tên attribute,
+    vẫn chạy được).
+  - Tạo 1 entity `role=EXTENSION, extends=Product, dimension_attributes=[period]`
+    qua pack.yaml → tạo được instance với `anchor_instance_id` đúng +
+    `business_key` ghép đúng sku+period, không trùng giữa 2 Product khác
+    nhau cùng period.
+
+### E8-02 [pack:automotive] (M) Dữ liệu demo: CostHistory (Extension), MarginThreshold (Parameter), mở rộng Product
+- **Mô tả**: Khai báo qua `pack.yaml` (thuần data, không code — D-013):
+  - `CostHistory` (role=EXTENSION, extends=Product, dimension
+    `period`): attribute `period` (DATE/STRING), `cost` (DECIMAL),
+    `quantity` (NUMBER) — đúng dữ liệu đã dùng ở POC DAG (weighted avg
+    cost).
+  - `MarginThreshold` (role=PARAMETER, key=`level`): attribute `level`
+    (STRING: `CRITICAL`/`RED`/`YELLOW`/`GREEN`), `min_margin_pct`,
+    `max_margin_pct` (DECIMAL, `max` nullable cho mức cao nhất) — ví dụ
+    PO cho: <15% critical, <20% red, <30% yellow.
+  - `Product` thêm attribute `country_of_manufacture` (STRING) — dùng cho
+    node Round-rule theo quốc gia (đã minh hoạ ở mockup Measure Canvas).
+- **Acceptance criteria**: Seed thật (không phải test fixture) — ít nhất 1
+  SKU có ≥3 dòng `CostHistory` (nhiều `period` khác nhau), đủ 4 mức
+  `MarginThreshold`, `country_of_manufacture` có giá trị cho mọi Product
+  demo.
+
+### E8-03 [core] (L) DAG execution engine
+- **Mô tả**: Thay `RuleEngine`/`PricingStage` tuyến tính (ADR-004) bằng
+  engine chạy theo graph (ADR-009 mục 2): node = data (`id, type, config,
+  inputs`), topological sort theo input reference, sinh Calculation Trace
+  đầy đủ. Node type tối thiểu: `query` (đọc Anchor/Extension/Parameter qua
+  Calculation Binding, mục E8-03b), `formula` (số học qua
+  `JsonLogicEvaluator` mở rộng — tái dùng, không viết lại), `weighted-
+  average`, `round`, `output`. **Không loop, không biến mutable.**
+- **E8-03b — Calculation Binding**: `calculation_binding` +
+  `calculation_binding_filter` + `calculation_binding_sort` (ADR-009 mục
+  3) — filter/sort/take-first user tự cấu hình, không có fallback ngầm;
+  ≥2 dòng mà `take_first=false` → lỗi rõ, chặn tính (runtime lẫn lúc
+  preview).
+- **Acceptance criteria**: Test tích hợp dựng lại đúng graph đã verify ở
+  POC (weighted avg cost → margin → round) chạy qua engine thật, không
+  mock; test binding ambiguous (≥2 dòng, không bật take_first) → lỗi rõ,
+  không tự chọn.
+
+### E8-04 [core] (M) Measure — subgraph tái dùng
+- **Mô tả**: `measure_definition` (`code, name, graph, result_node_id`) +
+  node type `measure-ref`. Transclude trace đầy đủ khi gọi lại (không hộp
+  đen). Tham số hoá theo context hiện tại (anchor instance đang tính),
+  không hardcode 1 instance cụ thể trong định nghĩa.
+- **Acceptance criteria**: 1 measure (`weightedAvgCost12M` kiểu) được 2
+  graph khác nhau tham chiếu → ra đúng giá trị mỗi lần, trace hiện đủ
+  bước bên trong measure ở cả 2 nơi gọi.
+
+### E8-05 [core] (L) Module Price List
+- **Mô tả**: Schema theo ADR-009 mục 5 (`price_list` header có
+  `status`/`version`/`calculation_rule_set_id`; `price_list_item` có
+  `result_price`/`manual_override_price`/`waterfall_steps` JSONB, không
+  tách bảng con). API tạo Price List, thêm Product vào, tính qua DAG,
+  submit, approve (snapshot vĩnh viễn sau approve).
+- **Acceptance criteria**: Tạo Price List dùng `calculation_rule_set_id`
+  đọc **cả 4 nguồn** (Product, Customer, `CostHistory` Extension,
+  `MarginThreshold` Parameter — xem E8-07 cho graph cụ thể) → ra
+  `result_price` đúng, approve xong sửa `CostHistory` nguồn không làm đổi
+  `result_price` đã approve (snapshot).
+
+### E8-06 [frontend] (M) Measure Canvas UI
+- **Mô tả**: UI kéo-thả xây/xem DAG, theo đúng mockup đã polish (xem
+  artifact "Measure Canvas") — context switcher, palette Data
+  source/Measure, canvas + Calculation Trace panel đồng bộ expand/
+  collapse. **Dùng Ant Design** (theo D-036 — Ant Design đã thay MUI cho
+  `web/`, áp dụng luôn cho UI mới này, không dùng lại MUI).
+- **Acceptance criteria**: Dựng 1 Price List qua UI thật (không mock), xem
+  trace, approve — đúng luồng đã minh hoạ ở mockup.
+
+### E8-07 [pack:automotive] (M) Seed demo tổng hợp — Price List mẫu dùng đủ 4 nguồn
+- **Mô tả**: 1 `price_list` thật, `calculation_rule_set_id` trỏ tới graph
+  đọc đủ 4 nguồn: `Product` (attribute riêng, vd `country_of_manufacture`
+  cho rule làm tròn), `CostHistory` Extension (weighted avg cost),
+  `MarginThreshold` Parameter (map margin% ra mức cảnh báo), và `Customer`
+  (1 giá trị tham chiếu/thông tin — **PO xác nhận cách dùng cụ thể lúc
+  implement**, vì Price List về nguyên tắc không có 1 customer context
+  cụ thể — xem NEEDS-PO-REVIEW ở `docs/sprints/sprint-3.md`).
+- **Acceptance criteria**: Chạy thật (không test fixture) ra `result_price`
+  + mức margin risk, dữ liệu là seed thật trong Postgres, không mock.
+
+---
+
 ## Theo dõi
 
 Backlog này map trực tiếp vào `docs/roadmap.md` (sprint nào làm story nào)
