@@ -101,4 +101,32 @@ public class EntityInstanceAttributeValue {
     public Long getValueRefInstanceId() {
         return valueRefInstanceId;
     }
+
+    /**
+     * Canonical string form of whichever typed {@code value*} column is
+     * populated — same convention as {@link AttributeValue#asDisplayString()}
+     * (D-019), reading back from the already-persisted row rather than a
+     * fresh {@link AttributeValue}. Needed by {@code EntityInstanceService}
+     * (S3-T1, D-039) to re-read an already-written dimension attribute
+     * value when assembling an {@code EntityRole.EXTENSION} instance's
+     * composite business key.
+     */
+    public String asDisplayString() {
+        if (valueString != null) {
+            return valueString;
+        }
+        if (valueNumber != null) {
+            return valueNumber.toPlainString();
+        }
+        if (valueDate != null) {
+            return valueDate.toString();
+        }
+        if (valueBoolean != null) {
+            return valueBoolean.toString();
+        }
+        if (valueRefInstanceId != null) {
+            return valueRefInstanceId.toString();
+        }
+        throw new IllegalStateException("EntityInstanceAttributeValue has no value set");
+    }
 }

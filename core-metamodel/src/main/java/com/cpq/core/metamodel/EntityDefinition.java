@@ -3,6 +3,8 @@ package com.cpq.core.metamodel;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -45,6 +47,12 @@ import java.util.List;
  * (unique per {@code entity_def_id + pack_id}) or "display label"
  * attribute — core only knows the generic key/label concept, never what
  * the attribute actually represents (SKU, customer id, ...).
+ *
+ * <p>{@code role}/{@code extendsEntityDefinition} (ADR-009 mục 1,
+ * D-037/D-038/D-039, S3-T1) are the entity taxonomy v2 fields — see
+ * {@link EntityRole}. Both are nullable: an entity definition created
+ * before this mechanism existed, or whose domain pack simply doesn't
+ * declare a role, keeps its old key/label-only behaviour unchanged.
  */
 @Entity
 @Table(name = "entity_def")
@@ -76,6 +84,14 @@ public class EntityDefinition {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "label_attribute_def_id")
     private AttributeDefinition labelAttributeDefinition;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", length = 20)
+    private EntityRole role;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "extends_entity_def_id")
+    private EntityDefinition extendsEntityDefinition;
 
     @OneToMany(mappedBy = "entityDefinition", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AttributeDefinition> attributes = new ArrayList<>();
@@ -126,6 +142,27 @@ public class EntityDefinition {
         this.labelAttributeDefinition = attribute;
     }
 
+    /**
+     * Assigns this entity definition's taxonomy role (ADR-009 mục 1,
+     * D-039). Does not validate anything about {@code extendsEntityDefinition}
+     * by itself — callers (e.g. {@code PackLoaderService}) are responsible
+     * for pairing {@link EntityRole#EXTENSION} with
+     * {@link #assignExtendsEntityDefinition}.
+     */
+    public void assignRole(EntityRole role) {
+        this.role = role;
+    }
+
+    /**
+     * Records which other entity definition this one extends (ADR-009
+     * mục 1, D-039) — only meaningful when {@code role ==
+     * EntityRole.EXTENSION}, but not enforced here (core doesn't police
+     * that pairing at the model level; {@code PackLoaderService} does).
+     */
+    public void assignExtendsEntityDefinition(EntityDefinition extendsEntityDefinition) {
+        this.extendsEntityDefinition = extendsEntityDefinition;
+    }
+
     private void requireOwnAttribute(AttributeDefinition attribute) {
         if (attribute.getEntityDefinition() != this) {
             throw new IllegalArgumentException(
@@ -167,6 +204,14 @@ public class EntityDefinition {
 
     public AttributeDefinition getLabelAttributeDefinition() {
         return labelAttributeDefinition;
+    }
+
+    public EntityRole getRole() {
+        return role;
+    }
+
+    public EntityDefinition getExtendsEntityDefinition() {
+        return extendsEntityDefinition;
     }
 
     public List<AttributeDefinition> getAttributes() {

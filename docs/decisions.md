@@ -1695,3 +1695,219 @@ stack thật, cả 2 lần 3/3 pass; `./gradlew :core-pricing:test` riêng cho 4
 class sandbox/determinism liên quan — pass lại, 0 fail. Mọi tiến trình
 `bootRun`/`vite` do task này khởi động đã dừng sạch (`lsof -i :8080 -i
 :5173` rỗng); container Postgres/Keycloak dùng chung vẫn chạy.
+
+## D-036 — Dùng Ant Design cho frontend (2026-11-17, PO)
+Quyết định: Migrate `web/` từ MUI (D-015) sang Ant Design (`antd`). Áp dụng
+cho mọi màn hình core hiện có (`EntitiesList`, `VehiclePartSelectionScreen`,
+`PriceWaterfallScreen`) và mọi UI mới sau đây.
+Lý do (PO): Ant Design phù hợp hơn với các màn hình dữ liệu/enterprise dày
+đặc (Table, Form, Descriptions) sắp cần cho Epic 8 (Measure Canvas, Price
+List); quyết định trực tiếp của PO, không qua architect spike riêng.
+Hệ quả: `docs/backlog.md`/`docs/sprints/` các task UI mới (S3-T8) dùng Ant
+Design từ đầu, không dùng lại MUI. Việc migrate các màn hình MUI cũ sang
+Ant Design là 1 task riêng (không phải nội dung Sprint 3 S3-T1..T7), chạy
+song song.
+
+## D-037 — ADR-009: Entity taxonomy mở rộng, DAG + Measure execution engine, module Price List (2026-11-20, PO)
+Quyết định: Sau Sprint 2, PO mở rộng phạm vi sản phẩm (SME pricing platform
+tuỳ biến được, không chỉ automotive MVP) và chốt kiến trúc mới qua thảo
+luận trực tiếp + 2 POC (DAG thuần, DAG có Measure tái dùng kiểu DAX) +
+1 UI mockup minh hoạ (measure canvas, context-aware theo SKU). Chi tiết đầy
+đủ: `docs/adr/0009-configurable-pricing-dag-and-price-list.md` — amend
+ADR-001 (thêm `Product`/`Customer` cố định + `ProductExtension`/
+`CustomerExtension`/`Parameter`), ADR-002 (thêm action `formula` dùng
+`JsonLogicEvaluator` cho giá trị, không chỉ điều kiện), ADR-003 (schema
+`price_list`/`price_list_item` đổi), ADR-004 (pipeline 6-stage cố định bị
+supersede bởi DAG — nguyên tắc BigDecimal/snapshot/round-trip vẫn giữ).
+Lý do: Pipeline tuyến tính cố định không đủ biểu đạt logic enterprise
+phức tạp (weighted avg cost, agreement resolution, hierarchy, currency
+conversion...) PO đưa ra làm ví dụ; nhưng visual node đầy đủ (loop/biến/
+join...) sẽ biến thành 1 ngôn ngữ lập trình thị giác, mâu thuẫn với yêu
+cầu thân thiện business user (tránh Groovy/SDK). DAG (không loop/biến
+mutable) + Measure có tên tái dùng (như DAX measure Power BI) là điểm
+trung gian: đủ mạnh, vẫn generic/data-driven, vẫn deterministic.
+Hệ quả: Rework đáng kể lên `PricingStage`/`RuleEngine`/`price_list` đã
+build Sprint 2 (xem ADR-009 mục "Hệ quả" cho danh sách đầy đủ tái dùng
+được/phải viết lại). NEEDS-PO-REVIEW: thứ tự migrate API
+`/api/pricing/calculate` hiện tại — ADR-009 không quyết, cần quyết riêng
+trước khi backend-dev bắt đầu implement. Chỉ mới thiết kế Price List;
+Promotion/Agreement và Quote-time tổng hợp nhiều element type để sau.
+
+## D-038 — Kế hoạch implementation cụ thể cho ADR-009: Epic 8, Sprint 3 mới, Ant Design, 4 bảng demo (2026-11-20, PO)
+Quyết định: Cụ thể hoá ADR-009/D-037 thành backlog + sprint thật:
+1. Thêm **Epic 8** (`docs/backlog.md`) — E8-01 (entity taxonomy v2:
+   `role`/`extends_entity_def_id`/composite key cho Extension, bootstrap
+   `Product`/`Customer` qua `CoreAnchorBootstrapService` chạy trước
+   `PackLoaderService` — không phải pack tạo 2 entity này, pack chỉ thêm
+   attribute) → E8-07 (seed Price List demo).
+2. **Sprint 3 đổi mục tiêu** (`docs/roadmap.md`): không còn "Hoàn thiện
+   MVP" (dời thành Sprint 4), tập trung Epic 8. Sprint 3 gốc → Sprint 4,
+   Sprint 4 gốc → Sprint 5 — roadmap giờ 5 sprint, không còn 4.
+   `docs/sprints/sprint-3.md` mới, task S3-T1→T9.
+3. **Frontend mới (S3-T8) dùng Ant Design** (D-036), không quay lại MUI —
+   PO xác nhận việc migrate Ant Design (D-036) chính là chuẩn bị frontend/
+   UI component cho implementation này, áp dụng luôn, không làm 2 lần.
+4. **4 bảng demo cụ thể PO chỉ định**: `Product` (Anchor, mở rộng thêm
+   `country_of_manufacture`), `Customer` (Anchor, đã có), `CostHistory`
+   (Extension của Product, dimension `period`, dùng đúng dữ liệu đã
+   verify ở POC weighted-avg-cost trong phiên thiết kế), `MarginThreshold`
+   (Parameter, key `level`, 4 mức CRITICAL<15%/RED<20%/YELLOW<30%/GREEN).
+5. **2 NEEDS-PO-REVIEW mới, chưa chặn Sprint 3, agent tự quyết default**
+   (CLAUDE.md mục 6): (a) route API engine mới (DAG) đặt tên gì, có migrate
+   `/api/pricing/calculate` cũ ngay không — default: không đụng API cũ,
+   build route mới song song, quyết migrate thật để sau; (b) Price List
+   (không có 1 customer context cụ thể) dùng `Customer` thế nào trong
+   graph demo E8-07 — default: 1 node tham chiếu/thông tin, không ảnh
+   hưởng `result_price`, chỉ chứng minh cơ chế đọc được, PO review lại kết
+   quả cụ thể sau khi implement.
+Lý do: PO yêu cầu trực tiếp "cập nhật theo hướng mới implementation cho
+Price List" kèm 4 yêu cầu cụ thể (module core rõ cho Product/Customer,
+dùng Ant Design đã migrate, output cuối sprint là data thật cho đủ 4 loại
+bảng + 1 Price List dùng được cả 4).
+Hệ quả: `docs/backlog.md` (Epic 8), `docs/roadmap.md` (Sprint 3 mới,
+Sprint 4/5 dời số), `docs/sprints/sprint-3.md` (mới) đã cập nhật. Sẵn sàng
+dispatch S3-T1/S3-T2 (không phụ thuộc gì, chạy song song được).
+
+## D-039 — S3-T1: entity taxonomy v2 (role/extends/dimension attribute) + CoreAnchorBootstrapService (2026-11-20, backend-dev)
+Quyết định (các điểm không hiển nhiên trong implementation của E8-01/
+ADR-009 mục 1):
+1. **`EntityRole` (core-metamodel, enum `ANCHOR`/`EXTENSION`/`PARAMETER`)
+   nullable trên `EntityDefinition`** — pack không bắt buộc khai báo
+   `role`; nếu `pack.yaml` không khai báo (`EntityDescriptor.role() ==
+   null`), `PackLoaderService` **không đụng** cột `role` hiện có (giữ
+   nguyên hành vi cũ) — tránh việc reload 1 pack không khai báo role lại
+   vô tình xoá role đã set bởi lần load trước/bootstrap.
+2. **Pack không được set `role` cho entity code `Product`/`Customer`** —
+   nếu `pack.yaml` cố khai báo, `PackLoaderService` ghi log `warn` và bỏ
+   qua giá trị đó (không throw), đúng yêu cầu task (không chặn pack hiện
+   tại lỡ có khai báo). `role=ANCHOR` cho 2 entity này **chỉ** do
+   `CoreAnchorBootstrapService` quyết.
+3. **`CoreAnchorBootstrapService`** (`app`, `ApplicationRunner`,
+   `@Order(1)`) tạo shell `Product`/`Customer` (`label=code`, `version=1`,
+   0 attribute) nếu chưa tồn tại, và **luôn** re-assert `role=ANCHOR` trên
+   mỗi lần khởi động (idempotent, no-op nếu đã đúng) — không chỉ lúc tạo
+   mới. `PackLoaderService` đổi từ không có `@Order` sang `@Order(2)` —
+   đây là lần đầu tiên 2 `ApplicationRunner` trong `app` có thứ tự tường
+   minh; 3 runner khác (`DemoDataSeedRunner`/`AutomotiveFitmentSeedRunner`/
+   `AutomotivePricingSeedRunner`) vẫn không có `@Order` → Spring coi là
+   `Ordered.LOWEST_PRECEDENCE` khi so sánh, nên vẫn luôn chạy sau cả 2 —
+   không đổi hành vi cũ của chúng (đã verify bằng cách đọc lại toàn bộ
+   `ApplicationRunner` trong `app` trước khi sửa, xem không cái nào phụ
+   thuộc thứ tự ngược lại).
+4. **Migration `V9__entity_taxonomy_v2.sql` backfill `role` một lần cho dữ
+   liệu Sprint 1/2 đã seed**: `role='ANCHOR'` cho code `Product`/`Customer`
+   nếu đã tồn tại, `role='PARAMETER'` cho mọi entity_def khác đã tồn tại
+   (ví dụ `Vehicle`, `TestWidget`/`SampleWidget` nếu còn) — là backfill
+   1-lần cho deployment **đã** chạy pack trước khi mechanism này tồn tại;
+   **không thay thế** `CoreAnchorBootstrapService` (deployment mới, DB
+   rỗng, không có gì để backfill — bootstrap tạo từ đầu). Verify bằng
+   `V9MigrationBackfillIT` (Flyway Java API trực tiếp, migrate tới V8,
+   insert dữ liệu giả lập đúng hình dạng demo Sprint 2 bằng JDBC thô, rồi
+   migrate tiếp lên mới nhất) — không dùng `@SpringBootTest` vì Spring Boot
+   luôn tự migrate thẳng lên bản mới nhất, không thể dựng lại trạng thái
+   "trước V9" qua context Spring.
+5. **Composite `business_key` cho Extension**: ghép `business_key` của
+   anchor instance + giá trị các dimension attribute theo đúng `position`
+   trong `entity_def_dimension_attribute`, nối bằng ký tự `"|"`
+   (`EntityInstanceService.BUSINESS_KEY_SEPARATOR`) — chọn `"|"` vì không
+   giá trị hiển thị nào trong 8 `AttributeDataType` (ADR-001) có thể chứa
+   ký tự này. Chỉ sync khi **đủ** giá trị mọi dimension attribute (tương tự
+   tinh thần D-019 "0 dòng → null" của Calculation Binding — instance chưa
+   ghi đủ dimension thì `business_key` vẫn `null`, không ghi 1 phần).
+6. **`entity_def_dimension_attribute` là full-replace, không additive**:
+   mỗi lần `PackLoaderService` nạp lại 1 entity EXTENSION, xoá hết dòng cũ
+   rồi ghi lại theo khai báo hiện tại của pack — khác với cơ chế
+   additive-only của attribute (D-020 điểm 5) vì danh sách dimension không
+   có state tích lũy cần giữ, bản khai báo pack hiện tại luôn là nguồn sự
+   thật duy nhất.
+7. **`extends` không bắt buộc trỏ tới entity role=ANCHOR** — generic hơn
+   mô tả hẹp "ProductExtension/CustomerExtension" của ADR-009: `extends`
+   có thể trỏ tới bất kỳ entity_def đã tồn tại nào (validate tồn tại, ném
+   `PackLoadException` rõ nếu không, dùng lại `resolveEntity` đã có cho
+   relationship, thêm tham số `referenceDescription` để message cụ thể
+   theo người gọi). Test minh hoạ dùng entity giả định "Gadget" (không
+   role=ANCHOR, không phải Product/Customer) làm anchor, chứng minh engine
+   không hardcode là Extension chỉ được extends 2 anchor cố định.
+8. **`EntityInstanceService.createInstance` thêm overload 4-tham số**
+   (`anchorInstanceId` kiểu `Long`, không phải `EntityInstance` — service
+   tự resolve qua repository, lỗi rõ nếu id không tồn tại) — giữ overload
+   3-tham số cũ (delegate tới overload mới với `null`), không đổi call site
+   nào đã có. Với entity không phải EXTENSION, `anchorInstanceId` khác null
+   bị bỏ qua (không lỗi) — đúng yêu cầu "bỏ qua/null nếu không phải
+   Extension".
+Lý do: Theo đúng scope S3-T1 (sprint-3.md) + E8-01 (backlog.md) + ADR-009
+mục 1 + nguyên tắc "agent không đứng chờ" (CLAUDE.md mục 6) cho các lựa
+chọn thiết kế không có ADR chi tiết tới mức implementation (ký tự phân
+tách business key, full-replace vs additive cho dimension attribute, có
+bắt buộc extends→ANCHOR hay không).
+Hệ quả: `core-metamodel` thêm `EntityRole`, `EntityDefinitionDimensionAttribute`;
+sửa `EntityDefinition` (thêm `role`/`extendsEntityDefinition` +
+`assignRole`/`assignExtendsEntityDefinition`), `EntityInstance` (thêm
+`anchorInstance` + `assignAnchorInstance`), `EntityInstanceAttributeValue`
+(thêm `asDisplayString()`). `app` thêm migration
+`V9__entity_taxonomy_v2.sql`, `CoreAnchorBootstrapService`,
+`EntityDefinitionDimensionAttributeRepository`; sửa `PackLoaderService`
+(second pass `applyRoleAndTaxonomy`, `@Order(2)`, `resolveEntity` thêm
+tham số mô tả), `EntityDescriptor` (thêm `role`/`extendsEntityCode`
+— `@JsonProperty("extends")` vì `extends` là từ khoá Java —
+/`dimensionAttributes`), `EntityInstanceService` (overload
+`createInstance` 4-tham số, `recomputeExtensionBusinessKeyIfComplete`).
+Không ảnh hưởng ranh giới core/domain: không sửa `pack.yaml` automotive
+(việc của S3-T4), test minh hoạ dùng "Gadget"/"GadgetCostHistory", không
+từ khoá automotive nào trong code lõi.
+Verify: `./gradlew build` — xem báo cáo S3-T1 cho log đầy đủ.
+
+## D-040 — Phát hiện thực nghiệm: ApplicationRunner CHẠY tự động dưới `@SpringBootTest` trong môi trường hiện tại — đính chính D-020 điểm 6 (2026-11-20, backend-dev)
+Quyết định: Ghi nhận là **sai/đã lỗi thời** phần tuyên bố ở D-020 điểm 6
+("ApplicationRunner KHÔNG tự chạy dưới `@SpringBootTest`") cho môi trường/
+version hiện tại của repo — không revert D-020 toàn bộ (phần còn lại vẫn
+đúng), chỉ đính chính điểm này.
+Bằng chứng (thực nghiệm lặp lại được, verify khi viết `CoreAnchorBootstrapServiceIT`
+ở S3-T1): chạy `./gradlew :app:test --tests
+"com.cpq.app.pack.CoreAnchorBootstrapServiceIT.createsProductAndCustomerAnchorShellsWithNoAttributesOnAnEmptyDatabase"`
+— test method **chỉ** gọi `bootstrapService.bootstrapCoreAnchors()` 1 lần,
+không có code nào khác trong class/test này gọi `PackLoaderService`. Vẫn
+fail vì `entity_def` code `Product` đã có đủ attribute automotive
+(`sku`/`name`/`oem_or_aftermarket`/...) **trước khi** dòng code đó chạy —
+chỉ giải thích được nếu `PackLoaderService.run()` (và `CoreAnchorBootstrapService.run()`,
+vì `role` cũng đã là `ANCHOR`) đã tự chạy lúc Spring context khởi động cho
+`@SpringBootTest` này, trước khi bất kỳ `@Test` method nào thực thi.
+Lý do (giả thuyết, chưa điều tra sâu root cause trong Spring Boot
+internals — không cần thiết cho S3-T1, chỉ cần biết hành vi thật để viết
+test đúng): có thể do thay đổi version Spring Boot giữa các sprint, hoặc
+quan sát gốc ở D-020 chỉ đúng với tổ hợp bean/điều kiện tại thời điểm đó.
+Không điều tra thêm — ghi nhận hành vi quan sát được, không suy diễn lý do
+nội bộ framework.
+Hệ quả — **mọi `@SpringBootTest` trong `app` giờ phải giả định MỌI
+`ApplicationRunner` bean (`CoreAnchorBootstrapService`, `PackLoaderService`,
+`DemoDataSeedRunner`, `AutomotiveFitmentSeedRunner`,
+`AutomotivePricingSeedRunner`) đã tự chạy xong TRƯỚC khi test method bắt
+đầu** — không còn giả định "DB rỗng, chưa pack nào chạy" được nữa cho bất
+kỳ entity code nào automotive pack/demo seed có động tới (đặc biệt
+`Product`/`Customer`). Các test Sprint 1/2 cũ (`EntityInstanceServiceIT`,
+`PackLoaderServiceIT` bản gốc, `MetamodelDefinitionServiceIT`...) vẫn pass
+vì tình cờ đã luôn dùng entity code **duy nhất/ngẫu nhiên** (UUID suffix
+hoặc tên không đụng automotive) cho mọi test — kỷ luật này giờ **bắt
+buộc** với mọi test mới, không chỉ là convention tốt. Việc test hành vi
+"trước khi PackLoaderService chạy" của `CoreAnchorBootstrapService`
+(S3-T1 Done-khi #1) **không thể verify qua `@SpringBootTest`** nữa (context
+luôn đã chạy xong mọi runner) — chuyển `CoreAnchorBootstrapServiceIT`
+(Testcontainers) thành `CoreAnchorBootstrapServiceTest` (unit test thuần,
+Mockito mock `EntityDefinitionRepository`, không Spring context) để kiểm
+đúng logic service độc lập khỏi ambient state; phần round-trip DB thật
+(enum `role` ghi/đọc đúng qua JPA) vẫn được `AutomotivePackIT` xác nhận
+(gọi `bootstrapCoreAnchors()` thật qua Testcontainers, assert
+`role == ANCHOR` sau đó — không cần biết nó đã tự chạy trước đó hay chưa,
+assertion vẫn đúng do idempotent). `PackLoaderServiceIT`'s
+`loadPackIgnoresRoleDeclaredForProductOrCustomerEntityCodes` sửa thành so
+sánh "role trước/sau pack load này" (ambient-state-independent) thay vì
+giả định role bắt đầu là `null`.
+**NEEDS-PO-REVIEW**: nếu đúng là MỌI runner luôn tự chạy ở MỌI
+`@SpringBootTest`, nghĩa là mọi IT hiện tại trong `app` đang trả giá thời
+gian chạy test (load automotive pack + import CSV demo + seed fitment/
+pricing) ở MỖI class, không chỉ riêng class thật sự cần nó — có thể là lý
+do suite `:app:test` hiện mất ~15 phút (quan sát trong lúc verify S3-T1).
+Không tự tối ưu ở task này (ngoài scope S3-T1) — gắn cờ cho qa-engineer/
+devops xem xét (có thể cần 1 test slice nhẹ hơn `@SpringBootTest` đầy đủ
+cho các IT không cần seed data thật).
+Verify: xem báo cáo S3-T1 cho lệnh/kết quả cụ thể.

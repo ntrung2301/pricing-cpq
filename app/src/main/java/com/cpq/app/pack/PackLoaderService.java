@@ -1,9 +1,12 @@
 package com.cpq.app.pack;
 
+import com.cpq.app.metamodel.EntityDefinitionDimensionAttributeRepository;
 import com.cpq.app.metamodel.EntityDefinitionRepository;
 import com.cpq.app.metamodel.RelationshipDefinitionRepository;
 import com.cpq.core.metamodel.AttributeDefinition;
 import com.cpq.core.metamodel.EntityDefinition;
+import com.cpq.core.metamodel.EntityDefinitionDimensionAttribute;
+import com.cpq.core.metamodel.EntityRole;
 import com.cpq.core.metamodel.RelationshipDefinition;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,8 +18,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Service;
@@ -49,9 +55,36 @@ import org.springframework.transaction.annotation.Transactional;
  * across a pack version bump" mechanism ADR-001 mentions is explicitly
  * deferred (flagged NEEDS-PO-REVIEW, see docs/decisions.md D-020) — not
  * required by this task's Definition of Done.
+ *
+ * <p><b>Entity taxonomy v2 (ADR-009 mục 1, D-037/D-038/D-039, S3-T1):</b>
+ * {@code role}/{@code extends}/{@code dimension_attributes} on {@code
+ * EntityDescriptor} are all optional. If a pack doesn't declare {@code
+ * role} for an entity, this service leaves that entity_def's {@code role}
+ * column exactly as it already is (D-039 — "giữ nguyên hành vi cũ"),
+ * whatever that was (null for a brand-new entity, or whatever a previous
+ * load/{@code CoreAnchorBootstrapService} already set). A pack is never
+ * allowed to set {@code role} for entity code {@code Product}/{@code
+ * Customer} — that is exclusively {@code CoreAnchorBootstrapService}'s
+ * job, running with {@code @Order(1)} strictly before this service's
+ * {@code @Order(2)}; if a pack declares one anyway, it is logged as a
+ * warning and silently ignored (not a hard failure — existing packs that
+ * happen to declare it must not be blocked by this). For any other
+ * entity, a declared {@code role == EXTENSION} requires {@code extends}
+ * to name an already-upserted-in-this-pack or already-persisted entity_def
+ * (clear {@link PackLoadException} otherwise), and each {@code
+ * dimension_attributes} code must match one of the entity's own declared
+ * attributes (clear {@link PackLoadException} otherwise) — recorded as
+ * ordered {@link EntityDefinitionDimensionAttribute} rows. Unlike plain
+ * attribute upsert, dimension attributes are fully replaced (delete all,
+ * re-insert) on every reload of the same entity — there is no accretive
+ * state to preserve there, the ordered list *is* the pack's current
+ * declaration.
  */
 @Service
+@Order(2)
 public class PackLoaderService implements ApplicationRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(PackLoaderService.class);
 
     static final int MAX_ATTRIBUTES_PER_ENTITY = 20;
 
@@ -59,15 +92,18 @@ public class PackLoaderService implements ApplicationRunner {
 
     private final EntityDefinitionRepository entityDefinitionRepository;
     private final RelationshipDefinitionRepository relationshipDefinitionRepository;
+    private final EntityDefinitionDimensionAttributeRepository dimensionAttributeRepository;
     private final ResourcePatternResolver resourcePatternResolver;
     private final ObjectMapper yamlMapper;
 
     public PackLoaderService(
             EntityDefinitionRepository entityDefinitionRepository,
             RelationshipDefinitionRepository relationshipDefinitionRepository,
+            EntityDefinitionDimensionAttributeRepository dimensionAttributeRepository,
             ResourcePatternResolver resourcePatternResolver) {
         this.entityDefinitionRepository = entityDefinitionRepository;
         this.relationshipDefinitionRepository = relationshipDefinitionRepository;
+        this.dimensionAttributeRepository = dimensionAttributeRepository;
         this.resourcePatternResolver = resourcePatternResolver;
         this.yamlMapper =
                 YAMLMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build();
@@ -122,6 +158,13 @@ public class PackLoaderService implements ApplicationRunner {
         for (EntityDescriptor entityDescriptor : pack.entities()) {
             EntityDefinition saved = upsertEntity(pack, entityDescriptor);
             byCode.put(saved.getCode(), saved);
+        }
+        // Second pass (ADR-009 mục 1/D-039): role/extends/dimension_attributes,
+        // processed after every entity in this pack has been upserted so
+        // 'extends' can reference any entity declared anywhere in the same
+        // pack (order-independent), not just ones declared earlier.
+        for (EntityDescriptor entityDescriptor : pack.entities()) {
+            applyRoleAndTaxonomy(pack, entityDescriptor, byCode);
         }
         for (RelationshipDescriptor relationshipDescriptor : pack.relationships()) {
             upsertRelationship(pack, relationshipDescriptor, byCode);
@@ -214,10 +257,113 @@ public class PackLoaderService implements ApplicationRunner {
         return attribute;
     }
 
+    /**
+     * Second pass of entity taxonomy v2 (ADR-009 mục 1, D-039) — see this
+     * class's javadoc for the full set of rules. No-op if {@code
+     * entityDescriptor.role()} is null (pack didn't declare a role).
+     */
+    private void applyRoleAndTaxonomy(
+            PackDescriptor pack, EntityDescriptor entityDescriptor, Map<String, EntityDefinition> byCode) {
+        if (entityDescriptor.role() == null) {
+            return;
+        }
+
+        if (CoreAnchorBootstrapService.PRODUCT_CODE.equals(entityDescriptor.code())
+                || CoreAnchorBootstrapService.CUSTOMER_CODE.equals(entityDescriptor.code())) {
+            log.warn(
+                    "Pack '{}' declares role '{}' for entity '{}', which is a fixed core anchor managed "
+                            + "exclusively by CoreAnchorBootstrapService (ADR-009 mục 1) — ignoring the "
+                            + "pack-declared role, not failing the load (D-039).",
+                    pack.packId(),
+                    entityDescriptor.role(),
+                    entityDescriptor.code());
+            return;
+        }
+
+        EntityDefinition entityDefinition = byCode.get(entityDescriptor.code());
+        EntityRole role = parseRole(pack, entityDescriptor);
+        entityDefinition.assignRole(role);
+
+        if (role == EntityRole.EXTENSION) {
+            applyExtension(pack, entityDescriptor, entityDefinition, byCode);
+        }
+
+        entityDefinitionRepository.save(entityDefinition);
+    }
+
+    private EntityRole parseRole(PackDescriptor pack, EntityDescriptor entityDescriptor) {
+        try {
+            return EntityRole.valueOf(entityDescriptor.role());
+        } catch (IllegalArgumentException e) {
+            throw new PackLoadException(
+                    "Pack '"
+                            + pack.packId()
+                            + "' rejected: entity '"
+                            + entityDescriptor.code()
+                            + "' declares unknown role '"
+                            + entityDescriptor.role()
+                            + "' (expected one of ANCHOR, EXTENSION, PARAMETER)");
+        }
+    }
+
+    private void applyExtension(
+            PackDescriptor pack,
+            EntityDescriptor entityDescriptor,
+            EntityDefinition entityDefinition,
+            Map<String, EntityDefinition> byCode) {
+        String extendsCode = entityDescriptor.extendsEntityCode();
+        if (extendsCode == null) {
+            throw new PackLoadException(
+                    "Pack '"
+                            + pack.packId()
+                            + "' rejected: entity '"
+                            + entityDescriptor.code()
+                            + "' has role EXTENSION but does not declare 'extends'");
+        }
+        EntityDefinition extended =
+                resolveEntity(
+                        pack, extendsCode, byCode, "entity '" + entityDescriptor.code() + "' (extends)");
+        entityDefinition.assignExtendsEntityDefinition(extended);
+
+        Map<String, AttributeDefinition> ownAttributesByCode = new HashMap<>();
+        for (AttributeDefinition attribute : entityDefinition.getAttributes()) {
+            ownAttributesByCode.put(attribute.getCode(), attribute);
+        }
+
+        // Full replace (not additive) — see class javadoc: the ordered
+        // dimension list *is* the pack's current declaration, nothing to
+        // accrete across reloads.
+        List<EntityDefinitionDimensionAttribute> existing =
+                dimensionAttributeRepository.findByEntityDefinitionOrderByPositionAsc(entityDefinition);
+        if (!existing.isEmpty()) {
+            dimensionAttributeRepository.deleteAll(existing);
+        }
+
+        int position = 0;
+        for (String dimensionAttributeCode : entityDescriptor.dimensionAttributes()) {
+            AttributeDefinition dimensionAttribute = ownAttributesByCode.get(dimensionAttributeCode);
+            if (dimensionAttribute == null) {
+                throw new PackLoadException(
+                        "Pack '"
+                                + pack.packId()
+                                + "' rejected: entity '"
+                                + entityDescriptor.code()
+                                + "' declares dimension attribute '"
+                                + dimensionAttributeCode
+                                + "' which is not one of its declared attributes");
+            }
+            dimensionAttributeRepository.save(
+                    new EntityDefinitionDimensionAttribute(entityDefinition, dimensionAttribute, position));
+            position++;
+        }
+    }
+
     private void upsertRelationship(
             PackDescriptor pack, RelationshipDescriptor relationshipDescriptor, Map<String, EntityDefinition> byCode) {
-        EntityDefinition from = resolveEntity(pack, relationshipDescriptor.fromEntity(), byCode);
-        EntityDefinition to = resolveEntity(pack, relationshipDescriptor.toEntity(), byCode);
+        String relationshipDescription = "relationship '" + relationshipDescriptor.code() + "'";
+        EntityDefinition from =
+                resolveEntity(pack, relationshipDescriptor.fromEntity(), byCode, relationshipDescription);
+        EntityDefinition to = resolveEntity(pack, relationshipDescriptor.toEntity(), byCode, relationshipDescription);
 
         RelationshipDefinition relationship =
                 relationshipDefinitionRepository
@@ -230,8 +376,17 @@ public class PackLoaderService implements ApplicationRunner {
         relationshipDefinitionRepository.save(relationship);
     }
 
+    /**
+     * Resolves {@code entityCode} to an entity definition — one already
+     * upserted earlier in this same pack load ({@code byCode}), or one
+     * already persisted from a previous load (this pack or another).
+     * {@code referenceDescription} (e.g. {@code "relationship 'supersedes'"},
+     * {@code "entity 'CostHistory' (extends)"}) names *what* is making the
+     * reference, so the thrown {@link PackLoadException} (if {@code
+     * entityCode} resolves to nothing) is specific enough to act on.
+     */
     private EntityDefinition resolveEntity(
-            PackDescriptor pack, String entityCode, Map<String, EntityDefinition> byCode) {
+            PackDescriptor pack, String entityCode, Map<String, EntityDefinition> byCode, String referenceDescription) {
         EntityDefinition inThisPack = byCode.get(entityCode);
         if (inThisPack != null) {
             return inThisPack;
@@ -243,7 +398,9 @@ public class PackLoaderService implements ApplicationRunner {
                                 new PackLoadException(
                                         "Pack '"
                                                 + pack.packId()
-                                                + "' rejected: relationship references unknown entity '"
+                                                + "' rejected: "
+                                                + referenceDescription
+                                                + " references unknown entity '"
                                                 + entityCode
                                                 + "'"));
     }

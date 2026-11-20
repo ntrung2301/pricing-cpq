@@ -6,6 +6,7 @@ import com.cpq.app.metamodel.EntityDefinitionRepository;
 import com.cpq.app.metamodel.RelationshipDefinitionRepository;
 import com.cpq.core.metamodel.AttributeDefinition;
 import com.cpq.core.metamodel.EntityDefinition;
+import com.cpq.core.metamodel.EntityRole;
 import com.cpq.core.metamodel.RelationshipCardinality;
 import com.cpq.core.metamodel.RelationshipDefinition;
 import java.util.List;
@@ -47,12 +48,18 @@ class AutomotivePackIT {
     }
 
     @Autowired private PackLoaderService packLoaderService;
+    @Autowired private CoreAnchorBootstrapService bootstrapService;
     @Autowired private EntityDefinitionRepository entityDefinitionRepository;
     @Autowired private RelationshipDefinitionRepository relationshipDefinitionRepository;
 
     @Test
     @Transactional
     void loadsAutomotivePackWithProductVehicleCustomerEntities() throws Exception {
+        // S3-T1 (E8-01): real startup order is CoreAnchorBootstrapService
+        // (@Order(1)) then PackLoaderService (@Order(2)) — replicated here
+        // explicitly since ApplicationRunner beans don't auto-run under
+        // @SpringBootTest (D-020 point 6).
+        bootstrapService.bootstrapCoreAnchors();
         packLoaderService.loadAllPacksFromClasspath();
 
         EntityDefinition product = entityDefinitionRepository.findByCodeWithAttributes("Product").orElseThrow();
@@ -62,6 +69,10 @@ class AutomotivePackIT {
         assertThat(product.getAttributes()).hasSizeLessThanOrEqualTo(20);
         assertThat(codesOf(product))
                 .contains("sku", "name", "oem_or_aftermarket", "core_charge", "moq", "packaging_unit");
+        // S3-T1: Product/Customer stay role=ANCHOR after the automotive
+        // pack loads — automotive's pack.yaml declares no `role` for them,
+        // so PackLoaderService must not overwrite what the bootstrap set.
+        assertThat(product.getRole()).isEqualTo(EntityRole.ANCHOR);
 
         EntityDefinition vehicle = entityDefinitionRepository.findByCodeWithAttributes("Vehicle").orElseThrow();
         assertThat(vehicle.getPackId()).isEqualTo("automotive");
@@ -74,6 +85,7 @@ class AutomotivePackIT {
         assertThat(customer.getLabelAttributeDefinition().getCode()).isEqualTo("name");
         assertThat(customer.getAttributes()).hasSizeLessThanOrEqualTo(20);
         assertThat(codesOf(customer)).contains("customer_id", "name", "tier", "contract_code", "contact_email");
+        assertThat(customer.getRole()).isEqualTo(EntityRole.ANCHOR);
 
         RelationshipDefinition supersedes = relationshipDefinitionRepository.findByCode("supersedes").orElseThrow();
         assertThat(supersedes.getFromEntityDefinition().getCode()).isEqualTo("Product");
