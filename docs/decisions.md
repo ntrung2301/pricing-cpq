@@ -1988,3 +1988,116 @@ Không tự tối ưu ở task này (ngoài scope S3-T1) — gắn cờ cho qa-e
 devops xem xét (có thể cần 1 test slice nhẹ hơn `@SpringBootTest` đầy đủ
 cho các IT không cần seed data thật).
 Verify: xem báo cáo S3-T1 cho lệnh/kết quả cụ thể.
+
+## D-042 — S3-T3: Calculation Binding schema + DAG node `query` (2026-11-20, backend-dev)
+Quyết định (các điểm không hiển nhiên trong implementation của E8-03b/
+ADR-009 mục 3):
+1. **"Anchor instance đang tính" được "bake" vào `config` của node
+   `query`** (key `anchorInstanceId`), theo đúng hướng (a) task đề nghị —
+   không sửa `DagEngine.execute()` (S3-T2, `core-pricing`, không JPA) để
+   nhận thêm tham số context. Lý do: `DagEngine` đã merge xong, không nên
+   đụng lại; hướng (a) đủ cho Done-khi S3-T3 (test gọi executor trực tiếp
+   với 1 anchor cố định mỗi lần). **Việc tổng quát hoá "không hardcode 1
+   instance cụ thể" (để Measure/S3-T5 tái dùng graph qua nhiều anchor) vẫn
+   còn nguyên — chưa giải quyết ở task này**, cần quyết lại khi S3-T5 build
+   `measure-ref` (NEEDS-PO-REVIEW nhẹ, không chặn S3-T3).
+2. **Node `query` được identify bằng `attribute_code` của
+   `calculation_binding` (không phải database id)** — `config.get(
+   "bindingAttributeCode")` là key tra cứu, cột `attribute_code` có UNIQUE
+   constraint (V10 migration). Lý do: graph/DAG lưu dạng dữ liệu portable
+   giữa môi trường (dev/staging/prod có id khác nhau nhưng cùng
+   `attribute_code`) — cùng tinh thần `entity_def.code`/`rule_set.code` đã
+   dùng xuyên suốt dự án, không dùng surrogate id làm khoá tham chiếu từ
+   bên ngoài.
+3. **`QueryNodeExecutor` (app, `com.cpq.app.pricing.dag`, implements
+   `core-pricing`'s `DagNodeExecutor`) không đăng ký vào
+   `DagNodeExecutors.standard()`** (đúng yêu cầu task — không sửa
+   `core-pricing`) — `AppDagNodeExecutors.withQuery()` (app) tự gộp
+   `standard()` + `"query"` thành 1 `Map<String,DagNodeExecutor>` mới mỗi
+   lần gọi, đúng pattern "glue layer" `ConstraintInstanceEvaluationService`
+   đã làm cho `core-constraint-engine`.
+4. **`CalculationBindingEntity`/`Filter`/`Sort` là plain `jakarta.persistence`
+   class trong `core-pricing/persistence`** (như `RuleSetEntity`/
+   `PriceListEntity` — ADR-005), không phải `core-metamodel` dù chúng tham
+   chiếu entity taxonomy (`source_entity_code`) — vì bản chất chúng là cấu
+   hình của **DAG/pricing engine** (thuộc về node `query`), không phải
+   khái niệm metamodel-level mới; `app` (`CalculationBindingRepository`)
+   owns JPA wiring như mọi entity khác.
+5. **`CalculationBindingRepository.findByAttributeCode` không fetch-join
+   `filters`/`sorts`** — 2 `@OneToMany` bag fetch-join cùng lúc gây
+   Hibernate `MultipleBagFetchException`. `QueryNodeExecutor.execute()`
+   đọc lazy, trong `@Transactional(readOnly = true)` của chính method đó —
+   cùng pattern `ConstraintInstanceEvaluationService.evaluate()`.
+6. **PRODUCT và CUSTOMER xử lý giống nhau trong `QueryNodeExecutor`**
+   (cùng 1 nhánh `case PRODUCT, CUSTOMER ->`: đọc `sourceAttributeCode` trực
+   tiếp off anchor instance trong config, không kiểm `entityDefinition.code`
+   có đúng là "Product"/"Customer" hay không). Lý do: giữ đúng nguyên tắc
+   "engine không hardcode nghĩa business của ANCHOR" (CLAUDE.md, ADR-009
+   hệ quả) — executor không biết/không cần biết code thật của 2 anchor cố
+   định, chỉ cần "đọc attribute X của entity instance đang được truyền vào
+   làm anchor". Test dùng entity giả định ("Gadget"/"Gizmo") cho cả 2
+   nhánh để minh chứng.
+7. **So sánh filter dùng `Comparable.compareTo` (không `equals`)** cho mọi
+   kiểu dữ liệu (đặc biệt `BigDecimal` — `equals` nhạy scale, `3` != `3.0`
+   theo `equals` nhưng `compareTo` coi bằng) — tránh lỗi filter `=`
+   fail sai vì khác scale lưu trữ. `Comparator` cho sort cũng dùng
+   `naturalOrder()` trên `Comparable` thô tương tự, với `nullsLast` cho
+   trường hợp candidate thiếu giá trị thuộc tính sort.
+8. **`value_source = REQUEST_PARAM` throw lỗi rõ
+   (`DagValidationException`), không "bỏ qua lặng lẽ"** như gợi ý "tạm bỏ
+   qua/ghi TODO" trong mô tả task — chọn throw vì bỏ qua 1 filter lặng lẽ
+   nghĩa là candidate set rộng hơn ý định config (có thể biến 1 binding
+   tưởng chừng unambiguous thành sai lặng lẽ) — vi phạm đúng nguyên tắc D-005/
+   ADR-009 mục 3 "không có fallback ngầm tự chọn thay user" mà toàn bộ
+   Calculation Binding dựa vào. **NEEDS-PO-REVIEW**: chưa có cơ chế truyền
+   request-level param vào `DagEngine.execute()`/node config — cần thiết
+   kế khi có use case thật (có thể cùng lúc với S3-T5/S3-T6).
+9. **Thứ tự filter → sort → take-first giữ đúng ADR-009**: filter luôn áp
+   dụng trước; nếu còn đúng 1 dòng sau filter, trả về ngay (không cần tra
+   `take_first_after_sort`, không cần có sort rows); chỉ khi còn ≥2 dòng mới
+   áp sort (nếu binding không khai báo sort row nào, "sort" là no-op, giữ
+   thứ tự `id` ascending — `findByEntityDefinition_Code[AndAnchorInstance]
+   OrderByIdAsc`, repository method mới, cùng lý do "kết quả xác định" đã
+   dùng ở S2-T7) rồi mới rẽ nhánh `take_first_after_sort`.
+10. **Số hiệu quyết định "D-042" giả định không trùng với S3-T4 (chạy song
+    song cùng thời điểm)** — theo đúng hướng dẫn task, nếu trùng, người
+    review renumber lúc merge.
+Lý do: Theo đúng chỉ dẫn task S3-T3 (ADR-009 mục 3, D-037/D-038/D-039/D-040,
+backlog E8-03b, sprint-3.md S3-T3) — các lựa chọn trên là các điểm "tự
+quyết hợp lý, ghi lý do" theo CLAUDE.md mục 6 (không có trong ADR-009 đủ
+chi tiết để suy ra máy móc: cơ chế bake anchor context, khoá tra cứu binding,
+vị trí JPA entity, cách so sánh giá trị, throw vs bỏ qua REQUEST_PARAM).
+Hệ quả:
+- `app/src/main/resources/db/migration/V10__calculation_binding.sql` (mới):
+  `calculation_binding`/`calculation_binding_filter`/`calculation_binding_sort`.
+- `core-pricing/src/main/java/com/cpq/core/pricing/dag/` (mới, plain enum,
+  không JPA): `CalculationBindingSourceType`, `CalculationBindingValueSource`,
+  `CalculationBindingSortDirection`, `CalculationBindingFilterOperator`
+  (wire-code converter pattern).
+- `core-pricing/src/main/java/com/cpq/core/pricing/persistence/` (mới):
+  `CalculationBindingEntity`, `CalculationBindingFilterEntity`,
+  `CalculationBindingSortEntity`, `CalculationBindingFilterOperatorConverter`.
+- `app/src/main/java/com/cpq/app/pricing/`: `CalculationBindingRepository`
+  (mới); `dag/QueryNodeExecutor`, `dag/AppDagNodeExecutors`, `dag/
+  CalculationBindingAmbiguousException` (mới, package mới `com.cpq.app.
+  pricing.dag`).
+- `app/src/main/java/com/cpq/app/metamodel/EntityInstanceRepository.java`:
+  thêm `findByEntityDefinition_CodeAndAnchorInstanceOrderByIdAsc`.
+- Test: `core-pricing` — `CalculationBindingFilterOperatorTest` (unit, wire
+  code round-trip). `app` — `QueryNodeExecutorIT` (Testcontainers, 11 test,
+  dùng entity giả định "Gadget"/"Gizmo"/"MarginLevel", không automotive):
+  PRODUCT/CUSTOMER đọc trực tiếp; EXTENSION 0/1/≥2 dòng (ambiguous throw,
+  take-first sort); PARAMETER không auto-match anchor + filter
+  CONTEXT_ATTRIBUTE; dữ liệu đổi giữa 2 lần gọi khiến 1 binding từng ra
+  đúng 1 dòng giờ ambiguous → throw ngay lần gọi sau (không cache); REQUEST_PARAM
+  throw rõ; binding code không tồn tại throw rõ.
+- Chưa làm: `measure-ref` (S3-T5), API HTTP cho `query`/Price List (S3-T6),
+  không đụng `pack.yaml` automotive thật (S3-T4, task khác chạy song song).
+Verify: `./gradlew :core-pricing:test` (operator wire-code unit test),
+`./gradlew :app:test --tests "com.cpq.app.pricing.dag.QueryNodeExecutorIT"`
+— 11 passed/0 failed; sabotage-and-revert check (tạm throw bị tắt) xác
+nhận `extensionBindingWithTwoMatchingRowsAndTakeFirstFalseThrowsAmbiguousError`/
+`sourceDataChangingBetweenTwoCallsMakesAPreviouslyUnambiguousBindingThrowOnTheSecondCall`
+fail đúng như kỳ vọng khi logic ambiguous bị tắt — xác nhận test không
+vacuous. `./gradlew build` (toàn repo): xem báo cáo cuối task cho log đầy
+đủ.
