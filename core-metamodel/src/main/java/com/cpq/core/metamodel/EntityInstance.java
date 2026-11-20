@@ -23,6 +23,15 @@ import jakarta.persistence.Table;
  * sync by the service layer (not a DB trigger) whenever that attribute's
  * value is written. {@code businessKey} is unique per
  * {@code entityDefinition + packId} (DB unique index).
+ *
+ * <p>{@code anchorInstance} (ADR-009 mục 1, D-037/D-038/D-039, S3-T1) is
+ * only meaningful when {@code entityDefinition.getRole() ==
+ * EntityRole.EXTENSION} — points at the other {@code EntityInstance} (of
+ * {@code entityDefinition.getExtendsEntityDefinition()}) this instance
+ * extends. For such instances, {@code businessKey} is assembled by the
+ * service layer as the anchor instance's own {@code businessKey} plus the
+ * ordered dimension attribute values (see
+ * {@link EntityDefinitionDimensionAttribute}), joined by {@code "|"}.
  */
 @Entity
 @Table(name = "entity_instance")
@@ -47,6 +56,10 @@ public class EntityInstance {
 
     @Column(name = "display_label", length = 255)
     private String displayLabel;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "anchor_instance_id")
+    private EntityInstance anchorInstance;
 
     protected EntityInstance() {
         // JPA
@@ -77,6 +90,22 @@ public class EntityInstance {
      */
     public void syncDisplayLabel(String displayLabel) {
         this.displayLabel = displayLabel;
+    }
+
+    /**
+     * Records which other {@code EntityInstance} this one extends (ADR-009
+     * mục 1, D-039) — only meaningful when this instance's entity
+     * definition has {@code role == EntityRole.EXTENSION}. Intended to be
+     * called only by {@code EntityInstanceService} (app), which enforces
+     * that pairing; not part of the generic public write API for arbitrary
+     * callers.
+     */
+    public void assignAnchorInstance(EntityInstance anchorInstance) {
+        this.anchorInstance = anchorInstance;
+    }
+
+    public EntityInstance getAnchorInstance() {
+        return anchorInstance;
     }
 
     public Long getId() {

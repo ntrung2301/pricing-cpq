@@ -33,6 +33,7 @@ task chạy song song (`superpowers:using-git-worktrees`).
 ### S3-T1 — Entity taxonomy v2: role Anchor/Extension/Parameter
 - **Người phụ trách**: backend-dev
 - **Phụ thuộc**: không
+- **Trạng thái**: Done (2026-11-20)
 - **Việc làm**: Theo backlog E8-01 + ADR-009 mục 1. Migration thêm
   `entity_def.role`, `entity_def.extends_entity_def_id`, bảng
   `entity_def_dimension_attribute`, `entity_instance.anchor_instance_id`.
@@ -46,6 +47,19 @@ task chạy song song (`superpowers:using-git-worktrees`).
   đúng, pack nạp thêm attribute không cần sửa Java, tạo Extension instance
   có `anchor_instance_id` + `business_key` ghép đúng, không trùng giữa 2
   Product khác nhau cùng dimension value.
+- **Tóm tắt kết quả**: Migration `V9__entity_taxonomy_v2.sql` (thêm
+  `entity_def.role`/`extends_entity_def_id`, bảng
+  `entity_def_dimension_attribute`, `entity_instance.anchor_instance_id`,
+  backfill `role` cho dữ liệu Sprint 1/2 đã seed). `core-metamodel` thêm
+  `EntityRole`, `EntityDefinitionDimensionAttribute`. `app` thêm
+  `CoreAnchorBootstrapService` (`@Order(1)`, trước `PackLoaderService`
+  `@Order(2)`); `PackLoaderService`/`EntityDescriptor` parse
+  `role`/`extends`/`dimension_attributes[]`, bỏ qua (log warn) nếu pack cố
+  set `role` cho `Product`/`Customer`; `EntityInstanceService` thêm
+  overload `createInstance(..., anchorInstanceId)` + composite
+  `business_key` cho Extension (`"<anchor>|<dim1>|<dim2>..."`). Chi tiết
+  quyết định: `docs/decisions.md` D-040 (+ D-041 cho phát hiện
+  `ApplicationRunner` tự chạy dưới `@SpringBootTest`, đính chính D-020).
 
 ### S3-T2 — DAG execution engine (core, chưa đụng entity taxonomy)
 - **Người phụ trách**: backend-dev
