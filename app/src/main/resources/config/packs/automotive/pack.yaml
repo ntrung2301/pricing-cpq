@@ -48,6 +48,66 @@ entities:
         data_type: STRING
         required: false
         external_code_hint: "PIES:Item_UnitMeasure"
+      # S3-T4 (E8-02/ADR-009 mục 1): used by a Round-rule-by-country DAG
+      # node later (S3-T7/Measure Canvas mockup), not consumed by any S3-T4
+      # code itself. required: false so existing products.csv rows without
+      # a value for this new column still import cleanly (D-005 "unknown
+      # column -> error" only fires on an *extra* header the entity has no
+      # attribute for, not a column some rows leave blank).
+      - code: country_of_manufacture
+        label: Country of manufacture
+        data_type: STRING
+        required: false
+  # Automotive demo data for ADR-009's entity taxonomy v2 (S3-T4, E8-02):
+  # CostHistory is role=EXTENSION of Product (anchor), dimension `period`
+  # — one Product can have many CostHistory rows, one per period, used by
+  # a later weighted-average-cost DAG node (S3-T7). `period` is STRING
+  # (not DATE): values are year-month only (e.g. "2026-09"), which is not
+  # a valid LocalDate (ADR-001's DATE type requires a day-of-month) — same
+  # choice already made for S3-T1's own "GadgetCostHistory" test fixture
+  # (see ExtensionEntityTaxonomyIT), kept consistent here rather than
+  # inventing a different convention for the first real EXTENSION entity.
+  - code: CostHistory
+    label: Cost History
+    role: EXTENSION
+    extends: Product
+    dimension_attributes: [period]
+    attributes:
+      - code: period
+        label: "Period (format YYYY-MM)"
+        data_type: STRING
+        required: true
+      - code: cost
+        label: Cost
+        data_type: DECIMAL
+        required: true
+      - code: quantity
+        label: Quantity
+        data_type: NUMBER
+        required: true
+  # MarginThreshold (S3-T4, E8-02): role=PARAMETER, independent of any
+  # anchor, key=level. Valid values: CRITICAL, RED, YELLOW, GREEN — no
+  # enum-value-list field exists yet on attribute_def (D-021), same
+  # label-comment convention as Product.oem_or_aftermarket/Customer.tier
+  # above. max_margin_pct is required: false because the top tier (GREEN)
+  # has no upper bound.
+  - code: MarginThreshold
+    label: Margin Threshold
+    role: PARAMETER
+    key_attribute: level
+    attributes:
+      - code: level
+        label: "Risk level (values: CRITICAL, RED, YELLOW, GREEN)"
+        data_type: STRING
+        required: true
+      - code: min_margin_pct
+        label: Minimum margin %
+        data_type: DECIMAL
+        required: true
+      - code: max_margin_pct
+        label: "Maximum margin % (no value for the highest tier, GREEN)"
+        data_type: DECIMAL
+        required: false
   # Vehicle (E1-03). No natural single-attribute key or label at MVP scope
   # — key_attribute/label_attribute intentionally omitted here, see
   # docs/decisions.md D-021 for the reasoning (internal id as de facto
