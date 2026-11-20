@@ -1,6 +1,7 @@
 package com.cpq.app.pack;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cpq.app.metamodel.EntityDefinitionDimensionAttributeRepository;
@@ -176,6 +177,61 @@ class PackLoaderServiceIT {
         assertThat(dimensions.get(0).getPosition()).isZero();
         assertThat(dimensions.get(1).getAttributeDefinition().getCode()).isEqualTo("city");
         assertThat(dimensions.get(1).getPosition()).isEqualTo(1);
+    }
+
+    @Test
+    @Transactional // same lazy-association reasoning as the test above.
+    void reloadingSamePackTwiceWithExtensionEntityDoesNotFailOnDimensionAttributeReplace() {
+        // S3-T4 regression (discovered while adding the automotive CostHistory
+        // EXTENSION entity to pack.yaml): every ApplicationRunner at real app
+        // startup calls PackLoaderService#loadAllPacksFromClasspath itself
+        // first (idempotency pattern — see DemoDataSeedRunner/
+        // AutomotiveFitmentSeedRunner javadoc), so any pack containing an
+        // EXTENSION entity gets reloaded multiple times across *separate*
+        // transactions in the same JVM run — unlike every other test in this
+        // class/ExtensionEntityTaxonomyIT, which only ever calls loadPack
+        // once per EXTENSION entity. On the 2nd+ call, applyExtension's
+        // "delete all existing dimension_attribute rows, then re-insert" was
+        // failing with a unique-constraint violation on
+        // uq_edda_entity_def_attribute, because within one transaction's
+        // flush Hibernate orders entity insertions before entity deletions
+        // — the re-insert of the same (entity_def_id, attribute_def_id) pair
+        // ran before the old row's delete, so Postgres saw a duplicate key.
+        String yaml =
+                """
+                pack_id: taxonomy-reload-test-pack
+                version: 1
+                entities:
+                  - code: PlReloadAnchor
+                    label: PL Reload Anchor
+                    key_attribute: anchor_code
+                    attributes:
+                      - code: anchor_code
+                        label: Anchor Code
+                        data_type: STRING
+                        required: true
+                  - code: PlReloadExtension
+                    label: PL Reload Extension
+                    role: EXTENSION
+                    extends: PlReloadAnchor
+                    dimension_attributes: [period]
+                    attributes:
+                      - code: period
+                        label: Period
+                        data_type: STRING
+                        required: true
+                """;
+
+        packLoaderService.loadPack(yaml);
+
+        assertThatCode(() -> packLoaderService.loadPack(yaml)).doesNotThrowAnyException();
+
+        EntityDefinition extension =
+                entityDefinitionRepository.findByCodeWithAttributes("PlReloadExtension").orElseThrow();
+        List<EntityDefinitionDimensionAttribute> dimensions =
+                dimensionAttributeRepository.findByEntityDefinitionOrderByPositionAsc(extension);
+        assertThat(dimensions).hasSize(1);
+        assertThat(dimensions.get(0).getAttributeDefinition().getCode()).isEqualTo("period");
     }
 
     @Test

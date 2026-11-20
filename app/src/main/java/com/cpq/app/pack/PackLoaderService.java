@@ -333,10 +333,25 @@ public class PackLoaderService implements ApplicationRunner {
         // Full replace (not additive) — see class javadoc: the ordered
         // dimension list *is* the pack's current declaration, nothing to
         // accrete across reloads.
+        //
+        // flush() right after the delete (S3-T4 regression fix, found while
+        // adding automotive's first real EXTENSION entity, CostHistory):
+        // without it, the delete and the re-insert below share one flush at
+        // transaction commit, and Hibernate's action queue always executes
+        // entity insertions before entity deletions regardless of the order
+        // they were queued in Java — so re-inserting the same (entity_def_id,
+        // attribute_def_id) pair ran *before* the old row's delete, tripping
+        // uq_edda_entity_def_attribute. Every ApplicationRunner at real app
+        // startup calls loadAllPacksFromClasspath itself first (idempotency
+        // pattern), so a pack with an EXTENSION entity really does get
+        // reloaded several times across separate transactions in one run —
+        // this was unreachable before CostHistory because no real pack had
+        // declared an EXTENSION entity yet.
         List<EntityDefinitionDimensionAttribute> existing =
                 dimensionAttributeRepository.findByEntityDefinitionOrderByPositionAsc(entityDefinition);
         if (!existing.isEmpty()) {
             dimensionAttributeRepository.deleteAll(existing);
+            dimensionAttributeRepository.flush();
         }
 
         int position = 0;
