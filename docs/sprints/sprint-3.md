@@ -272,12 +272,31 @@ task chạy song song (`superpowers:using-git-worktrees`).
 ### S3-T9 — QA: sign-off Sprint 3
 - **Người phụ trách**: qa-engineer
 - **Phụ thuộc**: S3-T7, S3-T8
+- **Trạng thái: Done** (2026-11-21, qa-engineer).
 - **Việc làm**: Theo mẫu S2-T14. Xác nhận lại tiêu chí demo Sprint 3
   (`docs/roadmap.md`) chạy thật 2 lần liên tiếp; xác nhận rõ API
   `/api/pricing/calculate` cũ (Sprint 2) còn hoạt động, không bị regress
   bởi engine mới chạy song song.
 - **Done khi**: Suite chạy xanh 2 lần liên tiếp trên stack thật, báo cáo
   sign-off (`docs/sprints/sprint-3-qa-signoff.md`, theo mẫu Sprint 2).
+- **Tóm tắt kết quả**: Sprint 3 đạt tiêu chí demo (4/4 tiêu chí con Pass).
+  `./gradlew build` 2 lần liên tiếp xanh (284 test, 0 fail/error cả 2
+  lần). `npx vitest run` (web): 40/41 pass, 1 fail đúng kỳ vọng
+  (`designSystem.test.ts`, migrate MUI→AntD ngoài phạm vi Sprint 3).
+  Playwright E2E (4 spec, gồm `measure-canvas.spec.ts` mới) chạy xanh 2 lần
+  liên tiếp, không flaky. API cũ `/api/pricing/calculate` xác nhận không
+  regress (test tự động + tay qua `curl`, số liệu giống báo cáo S2-T14).
+  1 finding thật phát hiện: Price List demo (S3-T7) trên Postgres dev dùng
+  chung lâu dài bị stale (`country_of_manufacture` không backfill cho
+  instance `Product` đã tồn tại từ trước khi attribute đó được thêm ở
+  S3-T4) do giới hạn thiết kế seed idempotent-skip (D-026) — xác nhận
+  **không phải bug code** bằng đối chiếu `PriceListDemoSeedRunnerIT`
+  (Testcontainers, fresh DB, pass đúng `57.50`/`"Vietnam"`). Không tự vá
+  (không sửa seed logic, không chạy SQL tay lên Postgres dùng chung). Toàn
+  bộ `NEEDS-PO-REVIEW` còn mở của Sprint 3 (10 mục, gồm 1 mục mới từ finding
+  trên) tổng hợp đầy đủ trong báo cáo, không tự quyết. Chi tiết đầy đủ:
+  `docs/sprints/sprint-3-qa-signoff.md`. PR: branch
+  `sprint3-s3-t9-qa-signoff`, chưa merge.
 
 ---
 
