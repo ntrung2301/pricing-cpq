@@ -1,15 +1,7 @@
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
-import FormControl from '@mui/material/FormControl'
-import InputLabel from '@mui/material/InputLabel'
-import MenuItem from '@mui/material/MenuItem'
-import Select, { type SelectChangeEvent } from '@mui/material/Select'
-import Stack from '@mui/material/Stack'
-import Typography from '@mui/material/Typography'
+import { Alert, Spin } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { Button, Field, Select } from '../ui'
 import { fetchInstances, fetchSupersededBy } from '../catalog/catalogApi'
 import { InstanceTable } from '../catalog/InstanceTable'
 import type { EntityInstanceSummary } from '../catalog/types'
@@ -53,9 +45,9 @@ function SupersessionHint({ accessToken, instanceId }: { accessToken: string; in
   }
 
   return (
-    <Typography variant="body2" color="warning.main" component="div">
+    <div style={{ color: '#a9254a', fontSize: 13 }}>
       ⚠ Đã bị supersede bởi {data.map((superseding) => superseding.displayLabel).join(', ')}
-    </Typography>
+    </div>
   )
 }
 
@@ -64,6 +56,9 @@ function SupersessionHint({ accessToken, instanceId }: { accessToken: string; in
  * per wireframe docs/ux/01-vehicle-part-selection.md — simplified per
  * docs/decisions.md (1 Vehicle dropdown instead of 4 dependent dropdowns;
  * no router hookup yet, S2-T13 will extend this same component).
+ *
+ * Migrated from MUI to Ant Design + web/design.md tokens (D-050) — logic,
+ * API calls, and query behavior unchanged, only the JSX.
  */
 export function VehiclePartSelectionScreen({ accessToken }: VehiclePartSelectionScreenProps) {
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null)
@@ -87,9 +82,8 @@ export function VehiclePartSelectionScreen({ accessToken }: VehiclePartSelection
     enabled: filterActive && selectedVehicleId !== null,
   })
 
-  function handleVehicleChange(event: SelectChangeEvent<number | ''>) {
-    const value = event.target.value
-    setSelectedVehicleId(value === '' ? null : Number(value))
+  function handleVehicleChange(value: number | undefined) {
+    setSelectedVehicleId(value ?? null)
     setFilterActive(false)
     setSelectedProduct(null)
   }
@@ -122,101 +116,91 @@ export function VehiclePartSelectionScreen({ accessToken }: VehiclePartSelection
   }
 
   return (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="h6" component="h2" gutterBottom>
-          Chọn xe
-        </Typography>
+    <div className="stack">
+      <div>
+        <h3>Chọn xe</h3>
 
         {vehiclesQuery.isLoading && (
-          <Box sx={{ display: 'flex', py: 2 }}>
-            <CircularProgress size={24} aria-label="Loading vehicles" />
-          </Box>
+          <div style={{ display: 'flex', padding: '8px 0' }}>
+            <Spin size="small" aria-label="Loading vehicles" />
+          </div>
         )}
 
         {vehiclesQuery.isError && (
           <Alert
-            severity="error"
+            type="error"
+            message={(vehiclesQuery.error as Error).message}
             action={
-              <Button color="inherit" size="small" onClick={() => void vehiclesQuery.refetch()}>
+              <Button size="small" variant="quiet" onClick={() => void vehiclesQuery.refetch()}>
                 Thử lại
               </Button>
             }
-          >
-            {(vehiclesQuery.error as Error).message}
-          </Alert>
+          />
         )}
 
         {vehiclesQuery.data && (
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-            <FormControl sx={{ minWidth: 280 }} size="small">
-              <InputLabel id="vehicle-select-label">Chọn xe</InputLabel>
-              <Select
-                labelId="vehicle-select-label"
-                label="Chọn xe"
-                value={selectedVehicleId ?? ''}
-                onChange={handleVehicleChange}
-              >
-                {vehiclesQuery.data.content.map((vehicle) => (
-                  <MenuItem key={vehicle.id} value={vehicle.id}>
-                    {vehicleLabel(vehicle)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+          <div className="inline-stack">
+            <Field label="Chọn xe" style={{ minWidth: 280 }}>
+              {(props) => (
+                <Select
+                  {...props}
+                  showSearch
+                  virtual={false}
+                  optionFilterProp="label"
+                  style={{ width: 280 }}
+                  value={selectedVehicleId ?? undefined}
+                  onChange={handleVehicleChange}
+                  options={vehiclesQuery.data!.content.map((vehicle) => ({
+                    value: vehicle.id,
+                    label: vehicleLabel(vehicle),
+                  }))}
+                />
+              )}
+            </Field>
             <Button
-              variant="contained"
+              variant="primary"
               disabled={selectedVehicleId === null}
               onClick={() => setFilterActive(true)}
             >
               Tìm part tương thích
             </Button>
-          </Stack>
+          </div>
         )}
-      </Box>
+      </div>
 
-      <Box>
-        <Typography variant="h6" component="h2" gutterBottom>
-          Danh sách Part
-        </Typography>
+      <div>
+        <h3>Danh sách Part</h3>
 
-        {!filterActive && (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Chọn xe ở trên để lọc nhanh hơn.
-          </Typography>
-        )}
+        {!filterActive && <p style={{ color: 'var(--slate)', marginTop: 0 }}>Chọn xe ở trên để lọc nhanh hơn.</p>}
 
         {productsLoading && (
-          <Box sx={{ display: 'flex', py: 2 }}>
-            <CircularProgress size={24} aria-label="Loading products" />
-          </Box>
+          <div style={{ display: 'flex', padding: '8px 0' }}>
+            <Spin size="small" aria-label="Loading products" />
+          </div>
         )}
 
         {!productsLoading && productsError && (
           <Alert
-            severity="error"
+            type="error"
+            message={(productsError as Error).message}
             action={
-              <Button color="inherit" size="small" onClick={retryProducts}>
+              <Button size="small" variant="quiet" onClick={retryProducts}>
                 Thử lại
               </Button>
             }
-          >
-            {(productsError as Error).message}
-          </Alert>
+          />
         )}
 
         {!productsLoading && !productsError && filterActive && displayedProducts?.length === 0 && (
           <Alert
-            severity="info"
+            type="info"
+            message="Không có part tương thích với xe đã chọn. Có thể nới điều kiện, xem toàn bộ catalog, hoặc liên hệ Pricing Admin nếu nghi thiếu dữ liệu fitment."
             action={
-              <Button color="inherit" size="small" onClick={clearFilter}>
+              <Button size="small" variant="quiet" onClick={clearFilter}>
                 Xem toàn bộ catalog
               </Button>
             }
-          >
-            Không có part tương thích với xe đã chọn. Có thể nới điều kiện, xem toàn bộ catalog,
-            hoặc liên hệ Pricing Admin nếu nghi thiếu dữ liệu fitment.
-          </Alert>
+          />
         )}
 
         {!productsLoading &&
@@ -235,17 +219,15 @@ export function VehiclePartSelectionScreen({ accessToken }: VehiclePartSelection
           )}
 
         {selectedProduct && (
-          <Alert severity="success" sx={{ mt: 2 }}>
-            Đã chọn: {selectedProduct.displayLabel}
-          </Alert>
+          <Alert type="success" style={{ marginTop: 16 }} message={`Đã chọn: ${selectedProduct.displayLabel}`} />
         )}
-      </Box>
+      </div>
 
       {/* S2-T13: nối tiếp "Chọn part này" ở trên — màn giá/waterfall
           cho đúng Product đã chọn, không cần router riêng (docs/decisions.md). */}
       {selectedProduct && (
         <PriceWaterfallScreen accessToken={accessToken} product={selectedProduct} />
       )}
-    </Stack>
+    </div>
   )
 }
