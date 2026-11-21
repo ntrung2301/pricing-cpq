@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /**
@@ -161,20 +162,15 @@ public class MeasureRefNodeExecutor implements DagNodeExecutor {
      * New {@link DagNode} per {@code query} node lacking its own {@code
      * anchorInstanceId} (absent or {@code null}) — never mutates the
      * stored definition, never overrides a {@code query} node that already
-     * has one baked in.
+     * has one baked in. Delegates to {@link AnchorInjector} (extracted,
+     * S3-T6/D-046) rather than its own copy of the algorithm — a measure's
+     * subgraph only ever needs {@code query} injected (nested
+     * measure-ref isn't supported, see {@link #requireNoNestedMeasureRef}),
+     * unlike a Price List's top-level graph which needs both {@code query}
+     * and {@code measure-ref}.
      */
     private List<DagNode> injectAnchorIntoQueryNodesMissingOne(List<DagNode> nodes, Object anchorInstanceId) {
-        List<DagNode> result = new ArrayList<>(nodes.size());
-        for (DagNode inner : nodes) {
-            if ("query".equals(inner.type()) && inner.config().get(CONFIG_ANCHOR_INSTANCE_ID) == null) {
-                Map<String, Object> mergedConfig = new LinkedHashMap<>(inner.config());
-                mergedConfig.put(CONFIG_ANCHOR_INSTANCE_ID, anchorInstanceId);
-                result.add(new DagNode(inner.id(), inner.type(), mergedConfig, inner.inputs()));
-            } else {
-                result.add(inner);
-            }
-        }
-        return result;
+        return AnchorInjector.injectAnchorIntoNodesMissingOne(nodes, anchorInstanceId, Set.of("query"));
     }
 
     private void recordTranscludedTrace(DagNode node, String measureCode, List<TraceEntry> subTrace) {
