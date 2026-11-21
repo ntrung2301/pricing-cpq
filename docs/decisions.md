@@ -2928,3 +2928,50 @@ liên tiếp: build graph qua kéo-thả thật → `POST /api/price-lists-v2` t
 `approve` thật chuyển đúng trạng thái. 3 E2E suite cũ (`walking-skeleton`,
 `vehicle-part-selection`, `pricing-determinism-api`) chạy cùng lúc vẫn
 xanh — không regress Sprint 1/2.
+
+## D-050 — S3-T9: QA sign-off Sprint 3 — finding dữ liệu stale trên Postgres dev dùng chung (seed idempotent-skip gặp schema evolution), không vá, báo backend-dev/devops (2026-11-21, qa-engineer) [NEEDS-PO-REVIEW]
+
+Quyết định: Trong lúc xác nhận tiêu chí demo Sprint 3 bằng cách gọi thật
+`GET /api/price-lists-v2/1` (Price List demo S3-T7) trên Postgres dev dùng
+chung (container 8 ngày tuổi, không phải Testcontainers), phát hiện
+`resultPrice=58.00`/`q_country` trả `null` — khác số liệu D-047 ghi nhận
+(`57.50`/`"Vietnam"`). Điều tra (xem `docs/sprints/sprint-3-qa-signoff.md`
+mục 5 cho chi tiết đầy đủ): `psql` trực tiếp xác nhận
+`country_of_manufacture` **không có dòng nào** trong
+`entity_instance_attribute_value` cho `BRK-PAD-NEW-001` trên Postgres dev
+này — do `DemoDataSeedRunner` (S2-T6) idempotent theo kiểu "entity_def đã
+có ≥1 instance = skip toàn bộ import" (D-026 điểm 4): `Product` đã có
+instance từ Sprint 2, trước khi cột `country_of_manufacture` được thêm vào
+`products.csv` ở S3-T4 (D-043) — nên cột mới đó chưa từng được backfill
+vào instance cũ trên deployment sống lâu dài này.
+
+**Không tự vá**: (a) `CatalogImportServiceImpl`/`CatalogRowWriter` luôn
+`createInstance` (insert mới, không upsert) — gọi lại API import qua CSV
+sẽ tạo trùng `business_key`/lỗi unique constraint, không an toàn; (b)
+chạy SQL `UPDATE` tay lên Postgres dev dùng chung có thể ảnh hưởng phiên
+khác đang chạy song song trên cùng container, ngoài phạm vi QA ("không tự
+sửa code sản phẩm/dữ liệu sản xuất thay backend-dev/devops"). Xác nhận
+bằng `PriceListDemoSeedRunnerIT` (Testcontainers, DB fresh) rằng **code
+đúng 100%** (pass `57.50`/`"Vietnam"`) — đây là vấn đề dữ liệu môi trường
+cụ thể của 1 Postgres sống lâu dài tích lũy qua nhiều sprint, không phải
+regression.
+
+Lý do: CLAUDE.md mục 6 ("agent không đứng chờ, nhưng dừng khi thực sự cần
+PO/backend-dev quyết") — việc sửa pattern seed (idempotent-skip → upsert
+có điều kiện, hoặc thêm cơ chế backfill riêng cho schema evolution) là
+quyết định kiến trúc của backend-dev/devops, không phải của QA; tự chạy
+SQL tay để "cho qua" demo tiếp theo sẽ vi phạm "không hạ tiêu chí để cho
+qua" (qa-engineer.md DoD) và có thể che giấu vấn đề thật lặp lại ở sprint
+sau.
+
+**NEEDS-PO-REVIEW**: cần quyết định hướng xử lý cho Postgres dev dùng
+chung hiện tại trước khi demo tay (không qua Playwright) cho PO/stakeholder
+— seed lại từ đầu (xoá volume) hay thêm cơ chế backfill cho attribute mới
+trên entity đã có instance. Không chặn việc đạt DoD Sprint 3 (toàn bộ test
+tự động, Testcontainers fresh DB, đã chứng minh code đúng).
+
+Hệ quả: không có file code nào bị sửa. `docs/sprints/sprint-3-qa-signoff.md`
+(mới, mục 5) + `docs/sprints/sprint-3.md` (S3-T9 cập nhật) ghi đầy đủ.
+Verify: xem `docs/sprints/sprint-3-qa-signoff.md` cho lệnh/log đầy đủ
+(`psql` output, so sánh `PriceListDemoSeedRunnerIT` vs. `GET
+/api/price-lists-v2/1` thật).
