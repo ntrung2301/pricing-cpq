@@ -1,13 +1,6 @@
-import Button from '@mui/material/Button'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Typography from '@mui/material/Typography'
-import Paper from '@mui/material/Paper'
 import type { ReactNode } from 'react'
+import type { TableColumnsType } from 'antd'
+import { Button, DataTable } from '../ui'
 import type { EntityInstanceSummary } from './types'
 
 interface InstanceTableProps {
@@ -37,6 +30,11 @@ interface InstanceTableProps {
  *
  * Column set is derived from the first row's attribute keys (entity_def
  * rows are expected to share the same attribute shape).
+ *
+ * Migrated from a hand-rolled MUI table to the shared `DataTable`
+ * (web/src/ui/DataTable.tsx) per D-050 — same props API as before (callers
+ * in web/src/configurator/VehiclePartSelectionScreen.tsx are unchanged),
+ * only the rendering underneath moved to Ant Design + web/design.md tokens.
  */
 export function InstanceTable({
   rows,
@@ -46,55 +44,55 @@ export function InstanceTable({
   selectActionLabel,
   renderRowFooter,
 }: InstanceTableProps) {
-  if (rows.length === 0) {
-    return <Typography>{emptyMessage}</Typography>
-  }
+  const attributeColumns = rows.length > 0 ? Object.keys(rows[0].attributes) : []
 
-  const attributeColumns = Object.keys(rows[0].attributes)
+  const columns: TableColumnsType<EntityInstanceSummary> = [
+    {
+      title: 'Business key',
+      dataIndex: 'businessKey',
+      render: (value: string | null) => value ?? '—',
+    },
+    {
+      title: 'Display label',
+      dataIndex: 'displayLabel',
+      render: (value: string | null, row) => (
+        <>
+          {value ?? '—'}
+          {renderRowFooter?.(row)}
+        </>
+      ),
+    },
+    ...attributeColumns.map((code) => ({
+      title: code,
+      key: code,
+      render: (_: unknown, row: EntityInstanceSummary) => String(row.attributes[code] ?? ''),
+    })),
+    ...(selectActionLabel
+      ? [
+          {
+            title: '',
+            key: 'select-action',
+            align: 'right' as const,
+            render: (_: unknown, row: EntityInstanceSummary) => (
+              <Button size="small" onClick={() => onSelectRow?.(row)}>
+                {selectActionLabel}
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ]
 
   return (
-    <TableContainer component={Paper}>
-      <Table aria-label="entity instances">
-        <TableHead>
-          <TableRow>
-            <TableCell>Business key</TableCell>
-            <TableCell>Display label</TableCell>
-            {attributeColumns.map((code) => (
-              <TableCell key={code}>{code}</TableCell>
-            ))}
-            {selectActionLabel && <TableCell align="right" />}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((row) => {
-            const footer = renderRowFooter?.(row)
-            return (
-              <TableRow
-                key={row.id}
-                selected={selectedRowId === row.id}
-                aria-selected={selectedRowId === row.id}
-                hover
-              >
-                <TableCell>{row.businessKey ?? '—'}</TableCell>
-                <TableCell>
-                  {row.displayLabel ?? '—'}
-                  {footer}
-                </TableCell>
-                {attributeColumns.map((code) => (
-                  <TableCell key={code}>{String(row.attributes[code] ?? '')}</TableCell>
-                ))}
-                {selectActionLabel && (
-                  <TableCell align="right">
-                    <Button size="small" onClick={() => onSelectRow?.(row)}>
-                      {selectActionLabel}
-                    </Button>
-                  </TableCell>
-                )}
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <DataTable<EntityInstanceSummary>
+      aria-label="entity instances"
+      rowKey="id"
+      columns={columns}
+      dataSource={rows}
+      pageSize={false}
+      emptyMessage={emptyMessage}
+      rowClassName={(row) => (selectedRowId === row.id ? 'instance-row--selected' : '')}
+      onRow={(row) => ({ 'aria-selected': selectedRowId === row.id })}
+    />
   )
 }

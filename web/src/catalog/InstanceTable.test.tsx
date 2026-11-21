@@ -30,7 +30,7 @@ describe('InstanceTable', () => {
 
     expect(screen.getByText('GZ-001')).toBeInTheDocument()
     expect(screen.getByText('Gizmo One')).toBeInTheDocument()
-    expect(screen.getByText('widgetColor')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'widgetColor' })).toBeInTheDocument()
     expect(screen.getByText('red')).toBeInTheDocument()
     expect(screen.getByText('20')).toBeInTheDocument()
   })
