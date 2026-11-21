@@ -1,5 +1,6 @@
 package com.cpq.app.catalog;
 
+import com.cpq.app.AbstractIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cpq.core.api.catalog.CatalogImportService;
@@ -14,10 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -40,17 +37,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 @SpringBootTest
 @WithMockUser(roles = "PRICING_ADMIN")
-class CatalogImportServiceImplIT {
-
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
-
-    @DynamicPropertySource
-    static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-    }
+class CatalogImportServiceImplIT extends AbstractIntegrationTest {
 
     @Autowired private com.cpq.app.metamodel.EntityDefinitionRepository entityDefinitionRepository;
     @Autowired private CatalogImportService catalogImportService;
