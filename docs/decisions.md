@@ -2740,3 +2740,68 @@ mới). `./gradlew :app:test --tests "com.cpq.app.demo.PriceListDemoSeedRunnerIT
 id=1, resultPrice=57.50`. `./gradlew :app:test` (toàn bộ, không filter) →
 155 test pass/0 fail (152 cũ + 3 mới) — không regress Sprint 1/2/S3-T1..T6.
 `./gradlew build` (toàn repo): BUILD SUCCESSFUL.
+
+## D-048 — Commit nền Ant Design common UI (chưa commit từ phiên khác) + vá dependency/test-infra để mở khoá S3-T8 (2026-11-21, orchestrator)
+
+**Bối cảnh**: Trước khi dispatch S3-T8 (Measure Canvas UI, Ant Design,
+phụ thuộc S3-T6 — đã merge), phát hiện việc migrate Ant Design (D-036)
+đang chạy ở 1 phiên Claude Code khác, cùng thư mục làm việc, nhưng toàn bộ
+kết quả (`web/src/ui/*` — Button/DataTable/DataPage/StatusPill/UIProvider/
+..., `web/src/workspace/*` — AppShell/HomeScreen, `web/src/products/*` —
+ProductsPage, `web/src/auth/workspaceRole.ts`, `web/src/test/
+designSystem.test.ts`) **chưa được commit** vào `main`. PO xác nhận
+(trong hội thoại): dùng nguyên code Ant hiện tại, làm tiếp S3-T8 trên đó.
+
+**Vấn đề cụ thể phát hiện khi kiểm tra**: `antd` và 2 package font
+(`@fontsource-variable/inter`, `@fontsource-variable/plus-jakarta-sans`)
+được `import` trong code nhưng **chưa khai báo trong `package.json`/chưa
+cài** — code Ant hiện tại không build/run được. Ngoài ra `DataTable.test.tsx`/
+`ui.test.tsx` fail do jsdom thiếu `ResizeObserver`/`window.matchMedia`
+(rc-component của antd cần), và 4 test tương tác (pagination/filter/dropdown)
+timeout ở mức mặc định vitest 5000ms (không phải treo thật — chạy đủ lâu
+~7-10s/test do DOM nặng của Ant, xác nhận bằng chạy lại với timeout 20000ms
+→ pass). `tsc -b` còn báo 2 import icon không dùng trong `AppShell.tsx`
+(`AppstoreFilled`, `MenuUnfoldOutlined`) — dead code vô hại, xoá luôn.
+
+**Quyết định**:
+1. Cài `antd` + 2 package fontsource còn thiếu vào `web/package.json`.
+2. Thêm polyfill `ResizeObserver`/`window.matchMedia` vào
+   `web/src/test/setup.ts` (jsdom không có sẵn, cần cho MỌI test dùng
+   component antd, không riêng gì component nào).
+3. Tăng `testTimeout` vitest lên 15000ms (`web/vite.config.ts`) — DOM antd
+   nặng hơn MUI, mức mặc định 5000ms không đủ, xác nhận không phải deadlock
+   thật trước khi tăng.
+4. Xoá 2 import icon chết trong `AppShell.tsx`.
+5. **Commit toàn bộ nền common UI chưa-commit nói trên + các vá lỗi trên
+   thành 1 commit riêng** (`sprint3-s3-t8-prep-antd-foundation`, merge
+   `--no-ff` vào `main`), KHÔNG chờ phiên kia tự commit. Lý do: nếu để
+   S3-T8 build trên 1 worktree chứa code chưa-commit của phiên khác, rồi
+   phiên kia tự commit sau theo đường khác → 2 nguồn gốc khác nhau cho
+   cùng 1 bộ file, xung đột merge thật khi hợp nhất. Commit thẳng vào
+   `main` ngay (không qua PR/code-reviewer) vì: (a) đây là code PO tự viết
+   ở phiên khác, không phải agent tự quyết kiến trúc; (b) PO đã trực tiếp
+   xác nhận dùng nguyên code này; (c) đã verify thật trước khi commit (xem
+   dưới) — không phải review kiến trúc mới, chỉ là "đưa code đã có vào
+   trạng thái build được".
+6. KHÔNG đụng màn hình MUI cũ (`App.tsx`, `EntitiesList`,
+   `VehiclePartSelectionScreen`, `PriceWaterfallScreen`, `LoginScreen`,
+   `InstanceTable`) — migrate các màn này là việc riêng, đang chạy ở phiên
+   khác, ngoài phạm vi Sprint 3 (đã ghi rõ ở đầu `sprint-3.md`).
+   `designSystem.test.ts` (test khẳng định đã bỏ hẳn MUI dependency) vẫn
+   **fail đúng kỳ vọng** — chưa xoá `@mui/material`/`@emotion/*` khỏi
+   `package.json` vì các màn cũ còn cần; đây là trạng thái đúng của 1 migrate
+   đang chạy, không phải lỗi của commit này.
+
+**Verify**: `npm install antd @fontsource-variable/inter
+@fontsource-variable/plus-jakarta-sans` → không có peer-dep error với React
+19. `npm run test -- --run` (toàn bộ `web`) → 30 passed/1 failed đúng 1 test
+kỳ vọng fail (`designSystem.test.ts`, lý do ở trên), không fail nào khác.
+`npx tsc -b` → sạch. `npm run build` → `BUILD SUCCESSFUL`, bundle sinh ra
+bình thường (chỉ cảnh báo chunk-size, không phải lỗi).
+
+**NEEDS-PO-REVIEW**: cảnh báo cho PO biết — phiên "migrate Ant Design" kia
+nếu tiếp tục làm trên cùng các file (`web/src/ui/*`,
+`web/src/workspace/*`...) sau khi commit này đã lên `main`, sẽ thấy các
+file đó giờ là tracked/clean (không còn "chưa commit" nữa) — thay đổi tiếp
+theo ở phiên đó sẽ hiện ra như sửa đổi (modified), không phải file mới,
+điều này là bình thường và mong đợi sau khi 1 trong 2 phiên commit trước.
