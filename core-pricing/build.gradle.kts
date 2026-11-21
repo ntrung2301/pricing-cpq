@@ -16,6 +16,20 @@ dependencies {
     // dependency — app owns the repository/service wiring.
     api("jakarta.persistence:jakarta.persistence-api")
 
+    // MeasureDefinitionEntity.graph (S3-T5) is a jsonb column mapped via a
+    // JPA AttributeConverter (DagNodeGraphConverter) — Hibernate 6 needs the
+    // attribute additionally annotated @JdbcTypeCode(SqlTypes.JSON), or it
+    // binds the converted String as plain varchar and every INSERT/UPDATE
+    // fails ("column \"graph\" is of type jsonb but expression is of type
+    // character varying"). compileOnly (not implementation/api): this is a
+    // deliberate, narrow exception to the "no Hibernate dependency" rule
+    // above — the annotation type must resolve at compile time for this one
+    // class, but core-pricing never runs Hibernate itself; app already pulls
+    // the real hibernate-core in at runtime (via spring-boot-starter-data-jpa)
+    // to actually process it, so no Hibernate dependency is added to any
+    // module's runtime classpath by this. See docs/decisions.md D-045.
+    compileOnly("org.hibernate.orm:hibernate-core")
+
     // JSON DSL rule parsing (rule_type=DSL, ADR-002) — jackson-databind is
     // not transitively pulled in by the bare `spring-boot-starter`
     // (cpq.java-conventions), unlike spring-boot-starter-web, so it is
