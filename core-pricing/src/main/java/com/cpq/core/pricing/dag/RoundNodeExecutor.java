@@ -33,12 +33,28 @@ final class RoundNodeExecutor implements DagNodeExecutor {
         return bigDecimal;
     }
 
+    /**
+     * Accepts any {@link Number}, not just a strict {@link BigDecimal} —
+     * a graph built from a real JSON request body (S3-T8 Measure Canvas
+     * UI, {@code POST /api/price-lists-v2}) has its {@code config} decoded
+     * by Jackson into a {@code Map<String, Object>} with no per-field type
+     * information, so a bare JSON number lands as a plain
+     * {@code Integer}/{@code Double}, never a {@code BigDecimal} (unlike
+     * every test in this codebase prior to S3-T8, which constructs a
+     * {@link DagNode} directly in Java with a real {@code BigDecimal}
+     * literal). Converts via {@code number.toString()}, not {@code
+     * BigDecimal.valueOf(double)}, to avoid any binary-floating-point
+     * round-trip artifacts.
+     */
     private static BigDecimal requireBigDecimalConfig(DagNode node, String field) {
         Object value = node.config().get(field);
-        if (!(value instanceof BigDecimal bigDecimal)) {
-            throw new DagValidationException(
-                    "round node '" + node.id() + "' requires config \"" + field + "\" as a BigDecimal, got " + value);
+        if (value instanceof BigDecimal bigDecimal) {
+            return bigDecimal;
         }
-        return bigDecimal;
+        if (value instanceof Number number) {
+            return new BigDecimal(number.toString());
+        }
+        throw new DagValidationException(
+                "round node '" + node.id() + "' requires config \"" + field + "\" as a BigDecimal, got " + value);
     }
 }

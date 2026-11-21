@@ -56,6 +56,12 @@ export function MeasureCanvasPage({ accessToken }: { accessToken: string }) {
   const nodeCounter = useRef(0)
   const [pendingDrop, setPendingDrop] = useState<PaletteKind | null>(null)
   const [dropHint, setDropHint] = useState<string | null>(null)
+  // Remounts NodeConfigModal with fresh internal state on every drop — it
+  // is otherwise a single long-lived component instance (only `kind`
+  // changes), so without this its local useState (operator/operand
+  // values/etc) would leak stale values from the previous node configured
+  // into the next one.
+  const [modalInstanceKey, setModalInstanceKey] = useState(0)
 
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
@@ -102,6 +108,7 @@ export function MeasureCanvasPage({ accessToken }: { accessToken: string }) {
     }
     setPendingDrop(payload.paletteKind)
     setDropHint(null)
+    setModalInstanceKey((key) => key + 1)
     pendingPresetIndex.current = payload.presetIndex ?? 0
   }
 
@@ -198,10 +205,13 @@ export function MeasureCanvasPage({ accessToken }: { accessToken: string }) {
           {(props) => (
             <Select
               {...props}
+              showSearch
+              virtual={false}
+              optionFilterProp="label"
               style={{ width: 280 }}
               placeholder="Chọn Product"
               value={contextProductId ?? undefined}
-              onDropdownVisibleChange={(open) => open && void ensureProductsLoaded()}
+              onOpenChange={(open) => open && void ensureProductsLoaded()}
               onChange={(value) => setContextProductId(value as number)}
               options={productOptions.map((p) => ({
                 value: p.id,
@@ -361,6 +371,7 @@ export function MeasureCanvasPage({ accessToken }: { accessToken: string }) {
       {error && <p role="alert" style={{ color: 'red' }}>{error}</p>}
 
       <NodeConfigModal
+        key={modalInstanceKey}
         kind={pendingDrop}
         presetIndex={pendingPresetIndex.current}
         numericNodes={numericNodes}
@@ -394,7 +405,7 @@ function NodeConfigModal({
   nextId: (prefix: string) => string
 }) {
   const [label, setLabel] = useState('')
-  const [operator, setOperator] = useState<'+' | '-' | '*' | '/'>('*')
+  const [operator, setOperator] = useState<'+' | '-' | '*' | '/'>('+')
   const [operandAType, setOperandAType] = useState<'literal' | 'ref'>('literal')
   const [operandAValue, setOperandAValue] = useState<number>(0)
   const [operandARef, setOperandARef] = useState<string | undefined>(undefined)
@@ -488,6 +499,9 @@ function NodeConfigModal({
           <Form.Item label="Customer" htmlFor="node-config-customer">
             <Select
               id="node-config-customer"
+              showSearch
+              virtual={false}
+              optionFilterProp="label"
               style={{ width: '100%' }}
               value={anchorCustomerId}
               onChange={(value) => setAnchorCustomerId(value as number)}
@@ -517,6 +531,7 @@ function NodeConfigModal({
                 ) : (
                   <Select
                     style={{ width: 160 }}
+                    virtual={false}
                     value={operandARef}
                     onChange={(v) => setOperandARef(v as string)}
                     options={numericNodes.map((n) => ({ value: n.id, label: n.label }))}
@@ -535,6 +550,7 @@ function NodeConfigModal({
                 ) : (
                   <Select
                     style={{ width: 160 }}
+                    virtual={false}
                     value={operandBRef}
                     onChange={(v) => setOperandBRef(v as string)}
                     options={numericNodes.map((n) => ({ value: n.id, label: n.label }))}
@@ -554,6 +570,7 @@ function NodeConfigModal({
               <Select
                 id="node-config-input-node"
                 style={{ width: '100%' }}
+                virtual={false}
                 value={inputNodeId}
                 onChange={(v) => setInputNodeId(v as string)}
                 options={numericNodes.map((n) => ({ value: n.id, label: n.label }))}
@@ -568,6 +585,7 @@ function NodeConfigModal({
               id="node-config-output-fields"
               mode="multiple"
               style={{ width: '100%' }}
+              virtual={false}
               value={outputFields}
               onChange={(v) => setOutputFields(v as string[])}
               options={allNodes.map((n) => ({ value: n.id, label: n.label }))}
