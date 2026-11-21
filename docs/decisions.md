@@ -2203,3 +2203,68 @@ Verify: `./gradlew :app:test --tests "com.cpq.app.pack.PackLoaderServiceIT"
 pass (PackLoaderServiceIT 8, ExtensionEntityTaxonomyIT 3, AutomotivePackIT
 1, 4 demo IT classes tổng 15), 0 fail/error. `./gradlew build` (toàn repo)
 — xem báo cáo cuối task cho output đầy đủ.
+
+## D-044 — Perf: shared Testcontainers Postgres + shared Spring context cho mọi `@SpringBootTest` IT trong `app` (2026-11-21, backend-dev)
+Bối cảnh: không phải task sprint-3 (không có mã S3-Tx) — PO yêu cầu trực
+tiếp sau D-041 (phát hiện mọi `ApplicationRunner` tự chạy dưới
+`@SpringBootTest`), vì NEEDS-PO-REVIEW ở D-041 nghi `:app:test` chậm
+(~15-20 phút) do mỗi 1 trong ~25 `@SpringBootTest` IT class tự khai báo
+riêng 1 `@Container PostgreSQLContainer` + 1 `@DynamicPropertySource` của
+chính nó (copy-paste qua Sprint 1/2/3). Đo thực nghiệm xác nhận: baseline
+`./gradlew :app:test --rerun` = **12m 17s**, log thấy **25 `HikariPool-N`
+riêng** (`HikariPool-1` → `HikariPool-25`) — nghĩa là Spring Test tạo 25
+`ApplicationContext` riêng, mỗi context tự chạy lại toàn bộ 6
+`ApplicationRunner` (pack loader, 2 demo seed CSV, fitment/pricing/taxonomy
+seed) + tự boot 1 Postgres container riêng.
+
+Quyết định:
+1. Thêm 1 class base mới `app/src/test/java/com/cpq/app/AbstractIntegrationTest.java`
+   (abstract, public): 1 `static final PostgreSQLContainer<?>` duy nhất
+   (`postgres:16-alpine`, không đổi version/image), start 1 lần trong
+   static initializer, **không gọi `.stop()`** (Ryuk reaper tự dọn lúc JVM
+   exit) — đúng "singleton container pattern" chuẩn của Testcontainers.
+   1 `@DynamicPropertySource` `static` duy nhất đăng ký
+   `spring.datasource.url/username/password` từ container đó.
+   **Không** dùng `@Testcontainers`/`@Container` (extension JUnit 5 của
+   Testcontainers) cho container này — extension đó quản lý start/stop
+   quanh từng test class, đúng thứ đang bị loại bỏ.
+2. Sửa 25/26 chỗ đang tự khai báo container/`@DynamicPropertySource` riêng
+   → `extends AbstractIntegrationTest`, xoá field `@Container` +
+   method `@DynamicPropertySource` cũ của chính class đó, xoá import
+   `PostgreSQLContainer`/`Container`/`DynamicPropertyRegistry`/
+   `DynamicPropertySource` không còn dùng. **Giữ nguyên** mọi annotation
+   khác ở class (`@SpringBootTest`, `@Testcontainers`, `@AutoConfigureMockMvc`,
+   `@WithMockUser`...) — kể cả `@Testcontainers` dù giờ không còn field
+   `@Container` nào trong class đó để quản lý (annotation trở thành no-op
+   vô hại, không gây lỗi runtime) — theo đúng yêu cầu task, tránh đụng
+   nhiều hơn cần thiết.
+3. **Loại trừ 1 file**: `V9MigrationBackfillIT` KHÔNG đổi — test này chủ
+   động bypass `@SpringBootTest`/Flyway auto-migration, tự lái Flyway tới
+   version 8 rồi insert data tay để dựng lại state "trước V9", sau đó mới
+   migrate tiếp — cần toàn quyền kiểm soát version schema của riêng nó,
+   không thể dùng chung container đã migrate sẵn tới head + đã seed đầy
+   đủ bởi mọi `ApplicationRunner`. Giữ nguyên container/pattern riêng của
+   nó.
+
+Kết quả đo được (bằng chứng, xem báo cáo task cho log đầy đủ):
+- Trước: `./gradlew :app:test --rerun` → `BUILD SUCCESSFUL in 12m 17s`,
+  25 `HikariPool-N` (1→25) trong log.
+- Sau: `./gradlew :app:test --rerun` → `BUILD SUCCESSFUL in 25s`, chỉ còn
+  **2 `HikariPool-N`** (1 và 2) — khớp dự đoán: 2 nhóm theo config THỰC SỰ
+  khác nhau (có `@AutoConfigureMockMvc` vs không có), không phải 1 context
+  duy nhất (đúng ý thiết kế — không ép mọi class vào chung context khi
+  config khác nhau thật). Giảm ~29 lần thời gian.
+- `./gradlew build` (toàn repo, `--rerun`) → `BUILD SUCCESSFUL in 31s`,
+  117/117 test `app` pass, 0 fail/error — không file nào trong 29 test
+  class `app` (25 vừa sửa + `V9MigrationBackfillIT` + 2 unit test thuần +
+  1 ArchUnit test) phải sửa giả định state ban đầu; kỷ luật
+  "ambient-state-independent" đã áp dụng từ D-041 cho mọi test mới nên
+  không có assertion nào giả định DB trống/đếm tuyệt đối bị phá bởi việc
+  dùng chung container/context.
+
+Domain vs engine: thay đổi thuần cấu trúc test (`app/src/test/java`),
+không sửa bất kỳ file nào dưới `app/src/main` — không business logic nào
+bị động tới, không ảnh hưởng ranh giới core/domain.
+
+Verify: xem báo cáo backend-dev cho log đầy đủ của cả 2 lần chạy
+(`./gradlew :app:test --rerun` trước/sau) + `./gradlew build --rerun`.
