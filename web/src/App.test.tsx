@@ -31,14 +31,12 @@ function renderApp(ui: ReactElement = <App />) {
 }
 
 describe('App', () => {
-  it('renders the CPQ Pricing Platform heading regardless of auth state', () => {
+  it('shows a loading indicator while the auth state is resolving', () => {
     useAuthMock.mockReturnValue({ isLoading: true, isAuthenticated: false, error: undefined })
 
     renderApp()
 
-    expect(
-      screen.getByRole('heading', { name: /cpq pricing platform/i }),
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/loading authentication state/i)).toBeInTheDocument()
   })
 
   it('shows a login button when the user is not authenticated', () => {
