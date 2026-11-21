@@ -1,37 +1,115 @@
+/*
+ * Design tokens sourced from web/design.md (ClickUp-style reference,
+ * D-050): white canvas, Plus Jakarta Sans / Inter, 9999px pill radius for
+ * buttons/badges, 12px card radius, 9px input radius, violet (#6647f0)
+ * reserved for brand/badge accents only, blue (#0091ff) for interactive
+ * accents (never the primary CTA fill, which stays Ink Black #202020).
+ * This file is the single source of token values — components reference
+ * the CSS variables below rather than hardcoding colors/fonts/radii.
+ */
 :root {
+  /* Colors — see web/design.md "Tokens — Colors" */
   --canvas: #ffffff;
   --ink: #202020;
   --onyx: #090c1d;
+  --carbon: #2a2a2a;
   --slate: #646464;
+  --ash: #838383;
+  --fog: #b3b3b3;
+  --cloud: #d4d4d4;
   --bone: #e8e8e8;
   --mist: #f8f9fa;
+  --plaster: #e9ebf0;
+  --mercury: #eeeeee;
   --violet: #6647f0;
   --violet-tint: #eeebff;
-  --link-blue: #0069b8;
-  --blue-tint: #eaf5ff;
+  --blue: #0091ff;
+  --blue-tint: #e6f5ff;
+  --mint: #6ee7b7;
+  --emerald: #00c07a;
+  --teal-tag: #16c0a4;
+
+  /* Back-compat aliases used by a few older component styles below */
+  --link-blue: #0091ff;
   --focus-blue: #0091ff;
+
+  /* Typography — web/design.md "Tokens — Typography" */
   --font-body: 'Inter Variable', system-ui, sans-serif;
   --font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
-  --pill-radius: 4px;
-  --workspace-ink: #263739;
-  --workspace-muted: #516365;
-  --workspace-divider: #e3e9e9;
-  --workspace-sidebar: #f3f6f7;
-  --workspace-accent: #27776f;
-  --workspace-selected: #dcefeb;
+
+  /* Shape — web/design.md "Border Radius" */
+  --radius-pill: 9999px;
+  --radius-card: 12px;
+  --radius-input: 9px;
+
+  /* Shadows — web/design.md "Shadows" (subtle, flat-first elevation) */
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+
+  /* Workspace shell — remapped onto the tokens above (D-050), replacing
+     the earlier placeholder teal theme. */
+  --workspace-ink: var(--ink);
+  --workspace-muted: var(--slate);
+  --workspace-divider: var(--bone);
+  --workspace-sidebar: var(--mist);
+  --workspace-accent: var(--blue);
+  --workspace-selected: var(--blue-tint);
+
+  /* Legacy alias kept so any remaining reference resolves to the new pill token. */
+  --pill-radius: var(--radius-pill);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+  padding: 8px 16px;
+  background: var(--ink);
+  color: var(--canvas);
+  border-radius: 0 0 var(--radius-input) var(--radius-input);
+}
+
+.skip-link:focus {
+  left: 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inline-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
 .ui-button--accent.ant-btn:not(:disabled, .ant-btn-disabled) {
-  border-color: var(--focus-blue);
-  color: var(--link-blue);
+  border-color: var(--blue);
+  color: var(--ink);
 }
 
 .ui-button--accent.ant-btn:not(:disabled, .ant-btn-disabled):is(:hover, :focus-visible) {
   background: var(--blue-tint);
+  border-color: var(--blue);
 }
 
 .ui-button:focus-visible {
-  outline: 2px solid var(--focus-blue);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 
@@ -43,6 +121,7 @@
 
 .ui-field > label {
   font-weight: 600;
+  color: var(--ink);
 }
 
 .ui-field-hint {
@@ -56,9 +135,9 @@
 .ui-status-pill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--pill-radius);
-  background: #eeeeee;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--mercury);
   color: var(--ink);
   font-size: 11px;
   font-weight: 600;
@@ -71,13 +150,13 @@
 }
 
 .ui-status-pill--success {
-  background: #6ee7b7;
+  background: var(--mint);
   color: #153f31;
 }
 
 .ui-status-pill--info {
-  background: #0091ff;
-  color: #090c1d;
+  background: var(--blue);
+  color: #ffffff;
 }
 
 .ui-status-pill--danger {
@@ -118,8 +197,9 @@
 
 .ui-data-grid {
   min-width: 0;
-  border: 1px solid var(--workspace-divider);
-  border-radius: 6px;
+  border: 1px solid var(--bone);
+  border-radius: var(--radius-card);
+  overflow: hidden;
 }
 
 .ui-data-toolbar {
@@ -159,8 +239,8 @@
 .ui-data-page-header h1 {
   margin: 0;
   color: var(--workspace-ink);
-  font: 750 22px/1.2 var(--font-display);
-  letter-spacing: -.025em;
+  font: 700 22px/1.2 var(--font-display);
+  letter-spacing: -0.025em;
 }
 
 .ui-data-page-copy {
@@ -299,4 +379,50 @@
   justify-content: space-between;
   gap: 8px;
   padding-block: 2px;
+}
+
+/* Plain semantic waterfall table (web/src/pricing/PriceWaterfallScreen.tsx)
+   — intentionally not the shared Ant DataTable: it needs a real
+   role="table" + accessible name ("price waterfall") for the existing
+   Playwright assertions, and has no sorting/filtering/pagination needs. */
+.waterfall-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--canvas);
+  border: 1px solid var(--bone);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.waterfall-table th,
+.waterfall-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--bone);
+  text-align: left;
+}
+
+.waterfall-table th {
+  background: var(--mist);
+  color: var(--slate);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.waterfall-table td.numeric,
+.waterfall-table th.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.waterfall-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Generic entity-instance table (web/src/catalog/InstanceTable.tsx) row
+   highlight for the currently-selected row. */
+.ui-data-grid tr.instance-row--selected > td {
+  background: var(--blue-tint);
 }
