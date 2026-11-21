@@ -1,0 +1,282 @@
+/*
+ * Workspace shell (AppShell/HomeScreen) styling. Previously these
+ * component class names had no CSS at all (unstyled divs/anchors) — this
+ * file applies web/design.md's tokens (via web/src/ui/styles.css custom
+ * properties) to the navbar/sidebar/home surfaces (D-050).
+ */
+
+.workspace {
+  min-height: 100vh;
+  background: var(--canvas);
+}
+
+.workspace-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 16px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--workspace-divider);
+  line-height: normal;
+}
+
+.workspace-sider-toggle {
+  margin-right: 4px;
+}
+
+.brand.workspace-logo {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.brand-mark {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--ink);
+}
+
+.workspace-picker-label {
+  margin: 0 2px 0 6px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.workspace-picker-arrow {
+  font-size: 10px;
+  color: var(--slate);
+}
+
+.workspace-menu-trigger {
+  display: none;
+}
+
+.workspace-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.workspace-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--slate);
+}
+
+.workspace-search-label {
+  color: var(--slate);
+}
+
+.workspace-search kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--bone);
+  border-radius: 6px;
+  background: var(--mist);
+  color: var(--ash);
+  font-size: 11px;
+}
+
+.workspace-master-label,
+.workspace-master-arrow {
+  color: var(--slate);
+}
+
+.workspace-frame {
+  background: var(--canvas);
+}
+
+.workspace-sider {
+  background: var(--canvas) !important;
+  border-right: 1px solid var(--workspace-divider);
+}
+
+.workspace-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px;
+}
+
+.workspace-navigation a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
+  color: var(--slate);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.workspace-navigation a:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink);
+}
+
+.workspace-navigation a[aria-current='page'] {
+  background: var(--workspace-selected);
+  color: var(--blue);
+}
+
+.workspace-navigation-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--workspace-divider);
+}
+
+.workspace-navigation-label {
+  padding: 0 12px 6px;
+  color: var(--ash);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.workspace-body {
+  background: var(--canvas) !important;
+  padding: 24px 28px;
+}
+
+.workspace-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.workspace-title-icon {
+  display: inline-flex;
+  color: var(--blue);
+}
+
+.workspace-title h1 {
+  margin: 0;
+  font: 700 26px/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.workspace-title-action {
+  margin-left: auto;
+}
+
+.workspace-content {
+  outline: none;
+}
+
+.workspace-search-input {
+  margin-bottom: 12px;
+}
+
+.workspace-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workspace-search-results a {
+  padding: 8px 10px;
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.workspace-search-results a:hover {
+  background: var(--mist);
+}
+
+/* Home screen */
+
+.workspace-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.home-action-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+  background: var(--mist);
+  border: 1px solid var(--bone);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a.home-action-card:hover {
+  border-color: var(--blue);
+}
+
+.home-action-card > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.home-action-card strong {
+  font-family: var(--font-display);
+  font-weight: 650;
+}
+
+.home-action-card > span:last-child > span:last-child {
+  color: var(--slate);
+  font-size: 13px;
+}
+
+.home-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--blue-tint);
+  color: var(--blue);
+  flex: none;
+}
+
+.home-card-icon.secondary {
+  background: var(--violet-tint);
+  color: var(--violet);
+}
+
+.home-lead {
+  border-radius: var(--radius-card);
+}
+
+.home-lead h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+@media (max-width: 991px) {
+  .workspace-sider-toggle {
+    display: none;
+  }
+
+  .workspace-menu-trigger {
+    display: inline-flex;
+  }
+
+  .workspace-picker-label,
+  .workspace-search-label,
+  kbd {
+    display: none;
+  }
+}

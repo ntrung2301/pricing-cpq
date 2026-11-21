@@ -1,23 +1,7 @@
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
-import FormControl from '@mui/material/FormControl'
-import InputLabel from '@mui/material/InputLabel'
-import MenuItem from '@mui/material/MenuItem'
-import Select, { type SelectChangeEvent } from '@mui/material/Select'
-import Stack from '@mui/material/Stack'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import Paper from '@mui/material/Paper'
+import { Alert, Input, Spin } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { Button, Field, Select } from '../ui'
 import { fetchInstances } from '../catalog/catalogApi'
 import type { EntityInstanceSummary } from '../catalog/types'
 import { fetchEntities } from '../entities/entitiesApi'
@@ -52,6 +36,12 @@ function customerLabel(customer: EntityInstanceSummary): string {
  * docs/ux/03-pricing-waterfall.md, simplified per docs/decisions.md (no
  * quote/approval screen, single generic error banner instead of
  * distinguishing "no price list" vs other failures).
+ *
+ * Migrated from MUI to Ant Design + web/design.md tokens (D-050) — logic
+ * and API calls unchanged. The waterfall grid itself stays a plain
+ * semantic `<table>` (not the shared Ant `DataTable`) so it keeps a real
+ * `role="table"` with an accessible name of "price waterfall", matching
+ * the existing Playwright assertions — see docs/decisions.md D-050.
  */
 export function PriceWaterfallScreen({ accessToken, product }: PriceWaterfallScreenProps) {
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null)
@@ -101,127 +91,119 @@ export function PriceWaterfallScreen({ accessToken, product }: PriceWaterfallScr
     enabled: productEntityDefId !== null && selectedCustomerId !== null && quantity > 0,
   })
 
-  function handleCustomerChange(event: SelectChangeEvent<number | ''>) {
-    const value = event.target.value
-    setSelectedCustomerId(value === '' ? null : Number(value))
+  function handleCustomerChange(value: number | undefined) {
+    setSelectedCustomerId(value ?? null)
   }
 
   return (
-    <Stack spacing={2} sx={{ mt: 2 }}>
-      <Typography variant="h6" component="h2">
-        Giá + Waterfall: {product.displayLabel ?? product.businessKey}
-      </Typography>
+    <div className="stack" style={{ marginTop: 8 }}>
+      <h3>Giá + Waterfall: {product.displayLabel ?? product.businessKey}</h3>
 
       {customersQuery.isError && (
         <Alert
-          severity="error"
+          type="error"
+          message={(customersQuery.error as Error).message}
           action={
-            <Button color="inherit" size="small" onClick={() => void customersQuery.refetch()}>
+            <Button size="small" variant="quiet" onClick={() => void customersQuery.refetch()}>
               Thử lại
             </Button>
           }
-        >
-          {(customersQuery.error as Error).message}
-        </Alert>
+        />
       )}
 
       {customersQuery.data && (
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <FormControl sx={{ minWidth: 280 }} size="small">
-            <InputLabel id="customer-select-label">Khách hàng</InputLabel>
-            <Select
-              labelId="customer-select-label"
-              label="Khách hàng"
-              value={selectedCustomerId ?? ''}
-              onChange={handleCustomerChange}
-            >
-              {customersQuery.data.content.map((customer) => (
-                <MenuItem key={customer.id} value={customer.id}>
-                  {customerLabel(customer)}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+        <div className="inline-stack">
+          <Field label="Khách hàng" style={{ minWidth: 280 }}>
+            {(props) => (
+              <Select
+                {...props}
+                showSearch
+                virtual={false}
+                optionFilterProp="label"
+                style={{ width: 280 }}
+                value={selectedCustomerId ?? undefined}
+                onChange={handleCustomerChange}
+                options={customersQuery.data!.content.map((customer) => ({
+                  value: customer.id,
+                  label: customerLabel(customer),
+                }))}
+              />
+            )}
+          </Field>
 
-          <TextField
-            label="Số lượng"
-            type="number"
-            size="small"
-            value={quantityInput}
-            onChange={(e) => setQuantityInput(e.target.value)}
-            sx={{ width: 120 }}
-            slotProps={{ htmlInput: { min: 1 } }}
-          />
+          <Field label="Số lượng" style={{ width: 120 }}>
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                min={1}
+                value={quantityInput}
+                onChange={(e) => setQuantityInput(e.target.value)}
+              />
+            )}
+          </Field>
 
-          <TextField
-            label="Giá hợp đồng riêng"
-            type="number"
-            size="small"
-            value={contractOverrideInput}
-            onChange={(e) => setContractOverrideInput(e.target.value)}
-            sx={{ width: 200 }}
-            helperText="Tuỳ chọn"
-          />
-        </Stack>
+          <Field label="Giá hợp đồng riêng" hint="Tuỳ chọn" style={{ width: 200 }}>
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                value={contractOverrideInput}
+                onChange={(e) => setContractOverrideInput(e.target.value)}
+              />
+            )}
+          </Field>
+        </div>
       )}
 
-      {selectedCustomerId === null && (
-        <Typography variant="body2" color="text.secondary">
-          Chọn khách hàng để tính giá.
-        </Typography>
-      )}
+      {selectedCustomerId === null && <p style={{ color: 'var(--slate)' }}>Chọn khách hàng để tính giá.</p>}
 
       {priceQuery.isLoading && selectedCustomerId !== null && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-          <CircularProgress size={20} aria-label="Loading price calculation" />
-          <Typography variant="body2">Đang tính giá...</Typography>
-        </Box>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
+          <Spin size="small" aria-label="Loading price calculation" />
+          <span>Đang tính giá...</span>
+        </div>
       )}
 
       {priceQuery.isError && (
         <Alert
-          severity="error"
+          type="error"
+          message={(priceQuery.error as Error).message}
           action={
-            <Button color="inherit" size="small" onClick={() => void priceQuery.refetch()}>
+            <Button size="small" variant="quiet" onClick={() => void priceQuery.refetch()}>
               Thử lại
             </Button>
           }
-        >
-          {(priceQuery.error as Error).message}
-        </Alert>
+        />
       )}
 
       {priceQuery.data && (
-        <Box>
-          <TableContainer component={Paper}>
-            <Table aria-label="price waterfall">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Bước</TableCell>
-                  <TableCell align="right">Điều chỉnh</TableCell>
-                  <TableCell align="right">Sau bước này</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {priceQuery.data.steps.map((step) => (
-                  <TableRow key={step.stepOrder}>
-                    <TableCell>{step.label}</TableCell>
-                    <TableCell align="right">{step.deltaAmount}</TableCell>
-                    <TableCell align="right">{step.resultingAmount}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <Typography variant="subtitle1" sx={{ mt: 1 }}>
-            Giá cuối: {priceQuery.data.finalAmount}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
+        <div>
+          <table className="waterfall-table" aria-label="price waterfall">
+            <thead>
+              <tr>
+                <th>Bước</th>
+                <th className="numeric">Điều chỉnh</th>
+                <th className="numeric">Sau bước này</th>
+              </tr>
+            </thead>
+            <tbody>
+              {priceQuery.data.steps.map((step) => (
+                <tr key={step.stepOrder}>
+                  <td>{step.label}</td>
+                  <td className="numeric">{step.deltaAmount}</td>
+                  <td className="numeric">{step.resultingAmount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ fontWeight: 650, marginTop: 8 }}>Giá cuối: {priceQuery.data.finalAmount}</p>
+          <p style={{ color: 'var(--slate)' }}>
             Số lượng × Giá cuối = Tổng dòng: {quantity} × {priceQuery.data.finalAmount} ={' '}
             {quantity * priceQuery.data.finalAmount}
-          </Typography>
-        </Box>
+          </p>
+        </div>
       )}
-    </Stack>
+    </div>
   )
 }

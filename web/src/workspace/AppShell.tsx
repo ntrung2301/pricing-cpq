@@ -1,6 +1,7 @@
 import {
   AppstoreOutlined,
   BarcodeOutlined,
+  CarOutlined,
   DatabaseOutlined,
   DownOutlined,
   HomeOutlined,
@@ -12,11 +13,17 @@ import {
 import { Avatar, Drawer, Dropdown, Grid, Layout, Modal } from "antd";
 import { Button, CompactUI, Empty, Input, StatusPill } from "../ui";
 import { type ReactNode, useEffect, useState } from "react";
+import "./workspace.css";
 
 const workspacePages = {
   home: { label: "Home", Icon: HomeOutlined },
   products: { label: "Products", Icon: BarcodeOutlined },
   catalog: { label: "Catalog", Icon: AppstoreOutlined },
+  // "Configurator" = the vehicle/part selection + price waterfall flow
+  // (web/src/configurator/VehiclePartSelectionScreen.tsx, migrated from
+  // MUI in D-050) — mounted into this shared shell instead of its own
+  // standalone page, per frontend-dev.md's "tái dùng ... cho mọi màn".
+  configurator: { label: "Configurator", Icon: CarOutlined },
   definitions: { label: "Catalog definitions", Icon: DatabaseOutlined },
 } as const;
 
@@ -57,7 +64,9 @@ export function AppShell({
   const sidebarMasterDataPages = masterDataPages.filter(
     (key) => key !== "products"
   );
-  const mainPages = pages.filter((key) => key === "home" || key === "catalog");
+  const mainPages = pages.filter(
+    (key) => key === "home" || key === "catalog" || key === "configurator"
+  );
   const sidebarAction = sidebarCollapsed
     ? "Expand sidebar"
     : "Collapse sidebar";
