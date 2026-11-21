@@ -166,6 +166,46 @@ class DagEngineTest {
                 .hasMessageContaining("not-a-real-type");
     }
 
+    /**
+     * S3-T7's real pattern (docs/decisions.md D-047): when the N rows a
+     * {@code weighted-average} needs come from several independent scalar
+     * sources (e.g. N separate real {@code query} nodes, one per period —
+     * simulated here with {@code formula} literals, since {@code query}
+     * itself is app-layer/S3-T3) rather than one literal list, each row is
+     * first assembled by an {@code output} node (zips named scalars into a
+     * {@code Map}), then all rows are zipped into a list by the new {@code
+     * collect} node, and only then fed to {@code weighted-average}.
+     */
+    @Test
+    void collectNodeZipsOutputNodeRowsIntoAListForWeightedAverage() {
+        DagNode costSep = new DagNode("costSep", "formula", Map.of("expression", json("40.00")), Map.of());
+        DagNode qtySep = new DagNode("qtySep", "formula", Map.of("expression", json("120")), Map.of());
+        DagNode costOct = new DagNode("costOct", "formula", Map.of("expression", json("42.50")), Map.of());
+        DagNode qtyOct = new DagNode("qtyOct", "formula", Map.of("expression", json("95")), Map.of());
+        DagNode costNov = new DagNode("costNov", "formula", Map.of("expression", json("44.00")), Map.of());
+        DagNode qtyNov = new DagNode("qtyNov", "formula", Map.of("expression", json("150")), Map.of());
+
+        DagNode rowSep = new DagNode("rowSep", "output", Map.of(), Map.of("cost", "costSep", "qty", "qtySep"));
+        DagNode rowOct = new DagNode("rowOct", "output", Map.of(), Map.of("cost", "costOct", "qty", "qtyOct"));
+        DagNode rowNov = new DagNode("rowNov", "output", Map.of(), Map.of("cost", "costNov", "qty", "qtyNov"));
+
+        DagNode rows =
+                new DagNode("rows", "collect", Map.of(), Map.of("sep", "rowSep", "oct", "rowOct", "nov", "rowNov"));
+
+        DagNode avgCost =
+                new DagNode(
+                        "avgCost", "weighted-average", Map.of("valueField", "cost", "weightField", "qty"), Map.of("rows", "rows"));
+
+        DagEngine engine = new DagEngine(DagNodeExecutors.standard());
+        DagExecutionResult result =
+                engine.execute(
+                        List.of(costSep, qtySep, costOct, qtyOct, costNov, qtyNov, rowSep, rowOct, rowNov, rows, avgCost));
+
+        // Same weighted average as PricingTaxonomyDemoSeedRunner's real CostHistory
+        // seed data (D-043): (40*120 + 42.5*95 + 44*150) / (120+95+150).
+        assertThat((BigDecimal) result.results().get("avgCost")).isEqualByComparingTo("42.2945205479");
+    }
+
     @Test
     void outputNodeWithTwoDifferentInputsReturnsBothInResultMap() {
         DagNode price = new DagNode("price", "formula", Map.of("expression", json("5")), Map.of());

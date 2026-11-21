@@ -5,7 +5,8 @@ import java.util.Map;
 /**
  * The finite, production node type registry (ADR-009 mục 2, S3-T2):
  * {@code formula}, {@code weighted-average}, {@code round}, {@code
- * output}. Deliberately NOT {@code query}/{@code measure-ref} — those read
+ * output}, {@code collect} (S3-T7, see {@link CollectNodeExecutor}).
+ * Deliberately NOT {@code query}/{@code measure-ref} — those read
  * entities (S3-T3) or transclude a named subgraph (S3-T5), both separate
  * tasks that build on this engine, not part of it.
  *
@@ -24,6 +25,7 @@ public final class DagNodeExecutors {
                 "formula", new FormulaNodeExecutor(),
                 "weighted-average", new WeightedAverageNodeExecutor(),
                 "round", new RoundNodeExecutor(),
-                "output", new OutputNodeExecutor());
+                "output", new OutputNodeExecutor(),
+                "collect", new CollectNodeExecutor());
     }
 }

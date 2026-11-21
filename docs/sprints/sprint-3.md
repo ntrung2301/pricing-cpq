@@ -211,13 +211,36 @@ task chạy song song (`superpowers:using-git-worktrees`).
 ### S3-T7 — Seed Price List demo dùng đủ 4 nguồn
 - **Người phụ trách**: backend-dev
 - **Phụ thuộc**: S3-T4, S3-T6
-- **Việc làm**: Theo backlog E8-07. 1 `price_list` thật, graph đọc
-  `Product` (country_of_manufacture → rule round), `CostHistory`
-  (weighted avg cost), `MarginThreshold` (map margin% ra mức risk), và
-  `Customer` (tự quyết cách dùng hợp lý, ghi lý do — xem lưu ý
-  NEEDS-PO-REVIEW ở đầu file).
-- **Done khi**: Chạy thật (không test fixture) ra `result_price` + mức
-  margin risk từ data Postgres thật.
+- **Trạng thái: Done** (2026-11-21, backend-dev).
+- **Việc làm**: Theo backlog E8-07. 1 `price_list_v2` thật (code
+  `PL-DEMO-BRK-PAD-NEW-001`), tạo qua đúng `PriceListService` thật (S3-T6,
+  không SQL thủ công), graph đọc đủ 4 nguồn: `Product`
+  (`country_of_manufacture`, Vietnam → chọn `round.nearest=0.50` lúc dựng
+  graph), `CostHistory` (weighted-average cost thật qua 3 node `query`
+  theo kỳ + node `output` zip row + node DAG MỚI `collect` zip N row
+  thành list — phát hiện gap kiến trúc thật: `query` luôn collapse về 1
+  giá trị, không thể tự trả list cho `weighted-average`, xem D-047 mục 1),
+  `MarginThreshold` (margin % → risk level `YELLOW`, side output, không
+  ảnh hưởng `result_price`, không cycle), và `Customer` (1 node `query`
+  với anchor baked cứng, chỉ nối vào node `output` phụ `summary`, không
+  bao giờ là ancestor của `result_price` — đúng gợi ý NEEDS-PO-REVIEW thứ
+  2 ở đầu file). Submit + approve thật.
+- **Tóm tắt kết quả**: `core-pricing` thêm node DAG `collect`
+  (`CollectNodeExecutor`, đăng ký trong `DagNodeExecutors.standard()`) —
+  generic, không business logic. `app` thêm
+  `PriceListDemoSeedRunner` (mới, gọi `PricingTaxonomyDemoSeedRunner` +
+  `PriceListService` thật, idempotent theo `code`). Kết quả thật:
+  `avgCost=42.2945205479` (weighted theo `quantity`), `result_price=57.50`,
+  `riskLevel=YELLOW`, `country=Vietnam`, `customerTier=OEM` — log/test
+  thật từ Postgres (Testcontainers), không fixture. Test: 3 unit
+  (`CollectNodeExecutorTest`) + 1 composition test mới
+  (`DagEngineTest`) + 3 integration (`PriceListDemoSeedRunnerIT`,
+  Testcontainers) — toàn bộ pass; `./gradlew build` pass, không regress
+  Sprint 1/2/S3-T1..T6. Quyết định chi tiết (trọng số = `quantity` có
+  sẵn, limitation filter AND-only không nhận diện được mức GREEN không
+  biên trên, round theo xuất xứ là quyết định seed-time không phải DAG
+  runtime): `docs/decisions.md` D-047. PR: branch
+  `sprint3-s3-t7-seed-price-list-demo`, chưa merge.
 
 ### S3-T8 — Measure Canvas UI (Ant Design)
 - **Người phụ trách**: frontend-dev
