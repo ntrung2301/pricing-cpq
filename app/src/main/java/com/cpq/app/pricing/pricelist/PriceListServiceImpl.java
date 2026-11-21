@@ -9,6 +9,7 @@ import com.cpq.core.api.pricelist.AddPriceListItemRequest;
 import com.cpq.core.api.pricelist.CreatePriceListRequest;
 import com.cpq.core.api.pricelist.DagNodeDto;
 import com.cpq.core.api.pricelist.OverridePriceRequest;
+import com.cpq.core.api.pricelist.PriceListDetailDto;
 import com.cpq.core.api.pricelist.PriceListDto;
 import com.cpq.core.api.pricelist.PriceListItemDto;
 import com.cpq.core.api.pricelist.PriceListService;
@@ -156,6 +157,31 @@ public class PriceListServiceImpl implements PriceListService {
         return toDto(item);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public PriceListDetailDto getPriceList(Long priceListId) {
+        PriceListV2Entity priceList = requirePriceList(priceListId);
+        List<PriceListItemV2Entity> items = priceListItemV2Repository.findByPriceList_Id(priceListId);
+        List<DagNodeDto> graph =
+                priceList.getCalculationGraph().stream().map(PriceListServiceImpl::toDagNodeDto).toList();
+        return new PriceListDetailDto(
+                priceList.getId(),
+                priceList.getCode(),
+                priceList.getName(),
+                priceList.getCurrency(),
+                priceList.getStatus().name(),
+                priceList.getValidFrom(),
+                priceList.getValidTo(),
+                priceList.getResultNodeId(),
+                priceList.getVersion(),
+                priceList.getCreatedBy(),
+                priceList.getSubmittedAt(),
+                priceList.getApprovedBy(),
+                priceList.getApprovedAt(),
+                graph,
+                items.stream().map(PriceListServiceImpl::toDto).toList());
+    }
+
     private PriceListV2Entity requirePriceList(Long id) {
         return priceListV2Repository
                 .findById(id)
@@ -195,6 +221,10 @@ public class PriceListServiceImpl implements PriceListService {
 
     private static DagNode toDagNode(DagNodeDto dto) {
         return new DagNode(dto.id(), dto.type(), dto.config(), dto.inputs());
+    }
+
+    private static DagNodeDto toDagNodeDto(DagNode node) {
+        return new DagNodeDto(node.id(), node.type(), node.config(), node.inputs());
     }
 
     private static PriceListDto toDto(PriceListV2Entity entity) {

@@ -37,4 +37,14 @@ public interface PriceListService {
 
     @PreAuthorize("hasRole('PRICING_ADMIN')")
     PriceListItemDto overridePrice(Long itemId, OverridePriceRequest request);
+
+    /**
+     * {@code GET /api/price-lists-v2/{id}} (S3-T8, docs/decisions.md D-049):
+     * read-only, so same RBAC level as {@code
+     * EntityInstanceQueryService.listInstances} (D-030) — any of the 3
+     * core roles, not {@code PRICING_ADMIN}-only like every mutating
+     * method above.
+     */
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'PRICING_ADMIN')")
+    PriceListDetailDto getPriceList(Long priceListId);
 }
