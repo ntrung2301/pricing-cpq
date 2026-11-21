@@ -2585,3 +2585,158 @@ bản backup trước khi sabotage). `./gradlew build` (toàn repo): BUILD
 SUCCESSFUL in 1m 33s — `app` 152 test pass/0 fail, `core-pricing` 79 test
 pass/0 fail (tổng từ toàn bộ test-results XML) — không regress Sprint
 1/2/S3-T1..T5/perf fix.
+
+## D-047 — S3-T7: seed Price List demo dùng đủ 4 nguồn — node DAG mới `collect`, trọng số weighted-average, cách Customer tham gia, round theo xuất xứ (2026-11-21, backend-dev)
+Quyết định (các điểm không hiển nhiên trong implementation của E8-07/
+sprint-3.md S3-T7):
+1. **Thêm node DAG mới `collect` vào `DagNodeExecutors.standard()`
+   (core-pricing) — phát hiện gap kiến trúc thật giữa S3-T2 (thiết kế) và
+   S3-T3 (implementation thật), không phải lựa chọn phong cách.** ADR-009
+   mô tả `weighted-average` nhận "1 input — List<Map<String,Object>> của
+   N dòng" (ví dụ 12 tháng `CostHistory`), và `DagEngineTest`'s POC
+   (S3-T2) mô phỏng input đó bằng 1 node `literal` fake trả thẳng ra 1
+   `List` có sẵn. Nhưng `QueryNodeExecutor` thật (S3-T3, D-042) **luôn
+   collapse** candidates của 1 binding EXTENSION/PARAMETER về ĐÚNG 1 giá
+   trị (filter → sort → take-first, 0 dòng → null, ≥2 dòng không
+   take_first → throw) — không có cách nào 1 node `query` tự trả ra "cả N
+   dòng dưới dạng list" để đưa trực tiếp vào `weighted-average`. Nghĩa là
+   lấy weighted-average cost từ dữ liệu `CostHistory` THẬT (không phải
+   literal/fixture) — đúng yêu cầu chính S3-T7 — không thể làm được chỉ
+   với 4 node type có sẵn (`formula`/`weighted-average`/`round`/`output`)
+   cộng `query`. **Giải pháp**: N `query` node riêng (1 binding/kỳ, filter
+   `period EQ constant`, mỗi binding luôn collapse về đúng 1 dòng) → N
+   node `output` (có sẵn, zip 2 scalar cost/quantity thành 1 row `Map`) →
+   1 node `collect` MỚI (zip N row `Map` thành 1 `List`, đối xứng hoàn
+   toàn với `output` — "zip thành map" vs "zip thành list") → node
+   `weighted-average` (nguyên trạng, không sửa). `CollectNodeExecutor`
+   hoàn toàn generic (không biết "cost"/"period"/"row" nghĩa là gì, chỉ
+   biết "N input đặt tên → 1 list theo thứ tự `resolvedInputs.values()`"),
+   đúng tinh thần ADR-009 mục 2 "mở rộng dần theo nhu cầu thật, không làm
+   hết 1 lần" — thứ tự list không ảnh hưởng kết quả vì tổng trong
+   `weighted-average` giao hoán. Không sửa `DagEngine`/`QueryNodeExecutor`
+   (đúng yêu cầu task) — chỉ thêm 1 class mới + 1 dòng đăng ký trong
+   `DagNodeExecutors.standard()` (file không bị cấm sửa). TDD: viết
+   `CollectNodeExecutorTest` + 1 test composition mới trong
+   `DagEngineTest` (dựng lại chính xác pattern output→collect→weighted-
+   average) trước, thấy fail (không compile vì class chưa tồn tại), rồi
+   implement.
+2. **Trọng số weighted-average = chính `quantity` (CostHistory có sẵn),
+   không phải trọng số nhân tạo theo "tháng gần nhất".** Task gợi ý "trọng
+   số tăng dần theo tháng gần nhất, hoặc đều nhau nếu không có cơ sở nào
+   khác" — nhưng `CostHistory` (D-043) đã có sẵn cột `quantity` (số lượng
+   mua ở từng kỳ: 120/95/150 cho 2026-09/10/11), là cơ sở trọng số tự
+   nhiên và đúng nghĩa kinh doanh nhất cho "weighted-average COST" (chi
+   phí mua nhiều hơn phải có ảnh hưởng lớn hơn tới giá vốn trung bình) —
+   dùng số liệu có sẵn thay vì bịa thêm 1 trọng số nhân tạo theo thời
+   gian (sẽ cần giải thích thêm "tại sao tháng 11 nặng hơn tháng 9" mà
+   không có yêu cầu nghiệp vụ nào đòi hỏi điều đó). `valueField=cost,
+   weightField=quantity` trên node `weighted-average` — kết quả
+   `42.2945205479` (scale 10, HALF_UP, đúng `WeightedAverageNodeExecutor`
+   nguyên trạng).
+3. **Cách Customer tham gia (NEEDS-PO-REVIEW thứ 2, sprint-3.md): đúng gợi
+   ý đã ghi sẵn — 1 node `query` đọc `Customer.tier` (1 instance thật,
+   `CUST-OEM-001` từ `customers.csv` S2-T6), với `anchorInstanceId` baked
+   cứng vào `config` ngay lúc dựng graph (không để trống cho
+   `AnchorInjector` tự inject) — nhờ vậy `AnchorInjector` (chỉ inject vào
+   node THIẾU anchor) bỏ qua node này, không bao giờ ghi đè bằng anchor
+   của Product đang được price. Node này chỉ nối vào `summary` (1 node
+   `output` phụ gộp price+riskLevel+country+customerTier để demo), tuyệt
+   đối không là ancestor của `roundedPrice`/`result_node_id` — xác nhận
+   bằng chính cấu trúc graph (không có input nào từ `q_customer` dẫn tới
+   `markupPrice`/`roundedPrice`) và test
+   `waterfallReadsAllFourSourcesAndTheMarginRiskLevelNeverAffectsTheResultPrice`
+   (so `roundedPrice`'s trace output với `item.getResultPrice()` — không
+   đổi dù `q_customer`/`q_marginTier` có mặt trong graph). Không có ý
+   nghĩa nghiệp vụ sâu hơn (vd customer-tier discount) — đúng tinh thần
+   task "không bắt buộc có ý nghĩa business sâu, chỉ chứng minh cơ chế
+   đọc được Customer". PO review lại sau nếu muốn Customer ảnh hưởng giá
+   thật (vd tier-based discount) — đó sẽ là 1 quyết định nghiệp vụ mới,
+   không phải cơ chế kỹ thuật.
+4. **Margin % biểu diễn dạng điểm phần trăm (0–100), không phân số
+   (0–1)** — khớp đúng `MarginThreshold.min_margin_pct`/`max_margin_pct`
+   đã seed ở D-043 (0/15/20/30, không phải 0.0/0.15/0.20/0.30). Node
+   `marginPct` = `((price - cost) / price) * 100` (division scale 10
+   HALF_UP theo `JsonLogicEvaluator`/D-039, rồi nhân 100 exact) — không
+   lưu `0.2593` rồi hy vọng binding filter tự biết nhân 100, vì
+   `CalculationBindingFilterEntity`'s so sánh (`QueryNodeExecutor.matches`)
+   chỉ `Comparable.compareTo` thô, không tự quy đổi đơn vị.
+5. **Markup cost-plus = ×1.35 cố định (không phải input từ nguồn dữ liệu
+   nào)** — tự quyết 1 hệ số minh hoạ hợp lý, chọn **sao cho margin% rơi
+   đúng vào 1 mức BOUNDED (YELLOW, 20–30%)**, không phải CRITICAL/RED
+   (cũng bounded, nhưng gần biên hơn, rủi ro flaky nếu dữ liệu demo đổi
+   nhẹ) và tuyệt đối không phải GREEN — xem điểm 6 ngay dưới.
+6. **Phát hiện limitation thật của binding filter pipeline (S3-T3, không
+   sửa): 2 filter AND-ed (`min_margin_pct LTE`/`max_margin_pct GT`, cả
+   hai `CONTEXT_ATTRIBUTE` = `marginPct`) không thể nhận diện đúng mức
+   GREEN** (`max_margin_pct` không có giá trị — cố ý, D-043, vì GREEN
+   không có biên trên) — `QueryNodeExecutor.matches()` trả `false` ngay
+   khi `rawValue == null`, nên filter `max_margin_pct GT ...` luôn fail
+   với GREEN dù margin% có cao đến đâu, khiến GREEN **không bao giờ** là
+   kết quả match của binding này. Đây là giới hạn thật của thiết kế
+   filter AND-only (ADR-009 mục 3: "0 dòng sau filter → null, không có
+   fallback"), không phải bug code — nhưng rất đáng ghi lại vì ảnh hưởng
+   trực tiếp khả năng dùng mức rủi ro cao nhất (GREEN) qua cơ chế hiện
+   tại. **Không sửa `QueryNodeExecutor`/schema filter** (ngoài scope S3-T7,
+   và sửa đúng cần thêm 1 `CalculationBindingFilterOperator` mới kiểu "LTE
+   OR NULL" hoặc 1 flag riêng cho field optional — thay đổi schema/engine,
+   cần quyết định riêng) — thay vào đó demo này tránh né bằng cách chọn
+   markup để margin% luôn rơi vào 1 mức bounded (điểm 5). **NEEDS-PO-REVIEW**:
+   nếu PO muốn mức GREEN (không biên trên) dùng được qua Calculation
+   Binding thật (không chỉ qua test seed tránh né), cần task riêng thiết
+   kế lại filter cho field optional.
+7. **Round "theo xuất xứ" là quyết định cấu hình lúc dựng graph (seed-
+   time), không phải 1 nhánh DAG runtime thật.** `RoundNodeExecutor`
+   (core-pricing, không sửa) đọc `nearest` từ `config` — 1 literal cố định
+   — không có input nào để 1 node khác (vd `q_country`) "lái" giá trị đó
+   lúc chạy; làm việc đó đúng nghĩa cần 1 node type mới kiểu "round có
+   nearest động theo 1 input" (over-engineer so với yêu cầu demo). Chọn:
+   `PriceListDemoSeedRunner` tự đọc `country_of_manufacture` của Product
+   (`BRK-PAD-NEW-001` = Vietnam, D-043) ngay lúc dựng graph, chọn
+   `nearest=0.50` cho Vietnam / `1.00` cho nước khác, baked cứng vào node
+   `round`'s config — vẫn "đọc được `country_of_manufacture` qua graph"
+   (node `q_country` có mặt, xuất hiện trong trace/`summary`, chứng minh
+   đọc được nguồn PRODUCT), nhưng việc nó ảnh hưởng `nearest` là quyết
+   định của người cấu hình Price List (seed runner, đóng vai Pricing
+   Admin), không phải tính năng DAG runtime mới. Nhất quán với "đừng
+   over-engineer" (task) — 1 use case demo không đủ lý do thêm 1 node type
+   mới chỉ để tránh 1 hardcode nhỏ ở seed-time.
+8. **SKU demo giữ `BRK-PAD-NEW-001`** (không đổi sang SKU khác) — đã có
+   sẵn đủ 3 dòng `CostHistory` + `country_of_manufacture=Vietnam` từ
+   D-043, không có lý do đổi.
+9. **Price List demo luôn submit + approve** (đúng yêu cầu task) — code
+   `PL-DEMO-BRK-PAD-NEW-001`, 1 item duy nhất (Product `BRK-PAD-NEW-001`).
+   Idempotency gate ở đúng 1 chỗ: `priceListV2Repository.findByCode(...)`
+   — nếu đã tồn tại, bỏ qua TOÀN BỘ (gồm cả việc tạo lại 9 dòng
+   `calculation_binding`), cùng kiểu "có ≥1 dòng = coi như đã seed đủ"
+   D-026 điểm 4 đã dùng cho mọi seed runner khác trong codebase.
+10. **9 `calculation_binding` mới, tiền tố `plv2_`** (tránh đụng tên với
+    binding do test khác tự tạo bằng UUID suffix) — mỗi binding là 1 dòng
+    cấu hình/dữ liệu thuần (D-013), không phải business logic Java.
+Lý do: Theo đúng chỉ dẫn task S3-T7 (backlog E8-07, sprint-3.md, D-042/
+D-043/D-045/D-046) — các điểm trên là "tự quyết hợp lý, ghi lý do" theo
+CLAUDE.md mục 6 (sprint-3.md/backlog không đủ chi tiết để suy ra máy móc:
+cách thật sự feed N dòng thật vào `weighted-average`, trọng số cụ thể,
+cách Customer tham gia, round theo xuất xứ, markup minh hoạ).
+Hệ quả:
+- `core-pricing/src/main/java/com/cpq/core/pricing/dag/CollectNodeExecutor.java`
+  (mới); `DagNodeExecutors.java` (sửa: thêm `"collect"` vào `standard()`).
+- `core-pricing/src/test/java/com/cpq/core/pricing/dag/CollectNodeExecutorTest.java`
+  (mới, 3 test); `DagEngineTest.java` (thêm 1 test composition
+  `collectNodeZipsOutputNodeRowsIntoAListForWeightedAverage`).
+- `app/src/main/java/com/cpq/app/demo/PriceListDemoSeedRunner.java` (mới)
+  — gọi `PriceListService` thật (S3-T6), không SQL thủ công, không mock.
+- `app/src/test/java/com/cpq/app/demo/PriceListDemoSeedRunnerIT.java`
+  (mới, 3 test, Testcontainers).
+- Domain vs engine: `collect` là node DAG generic (không biết nghĩa
+  business của input) — thuộc engine lõi, không phải domain-specific.
+  `PriceListDemoSeedRunner` biết "CostHistory"/"MarginThreshold"/"Customer"
+  là gì (đọc code/attribute cụ thể) — đúng vai trò 1 seed runner (demo
+  data/config), không phải engine; không có business logic automotive nào
+  lẻn vào `core-pricing`/`QueryNodeExecutor`/`PriceListServiceImpl`.
+Verify: `./gradlew :core-pricing:test` → 83 test pass/0 fail (79 cũ + 4
+mới). `./gradlew :app:test --tests "com.cpq.app.demo.PriceListDemoSeedRunnerIT"`
+→ 3 passed/0 failed; log thật xác nhận
+`Seeded demo Price List 'PL-DEMO-BRK-PAD-NEW-001' (status=APPROVED): item
+id=1, resultPrice=57.50`. `./gradlew :app:test` (toàn bộ, không filter) →
+155 test pass/0 fail (152 cũ + 3 mới) — không regress Sprint 1/2/S3-T1..T6.
+`./gradlew build` (toàn repo): BUILD SUCCESSFUL.
