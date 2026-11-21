@@ -2403,3 +2403,185 @@ khác phụ thuộc anchor) — xác nhận test không vacuous; đã revert l�
 bản, diff rỗng. `./gradlew build` (toàn repo): BUILD SUCCESSFUL, 125 test
 `app` pass/0 fail (tổng từ toàn bộ test-results XML), không regress
 Sprint 1/2/S3-T1..T4/perf fix.
+
+## D-046 — S3-T6: Price List module (schema + API) trên DAG engine (2026-11-21, backend-dev)
+Quyết định (các điểm không hiển nhiên trong implementation của E8-05/
+ADR-009 mục 5):
+1. **Tên bảng/class/repository thêm hậu tố `V2`, bắt buộc do trùng tên
+   thật** (không phải lựa chọn phong cách): `price_list`/`price_list_item`
+   (bảng), `PriceListEntity`/`PriceListItemEntity` (class, trong CHÍNH
+   package `com.cpq.core.pricing.persistence`), `PriceListRepository`/
+   `PriceListItemRepository` (trong CHÍNH package `com.cpq.app.pricing`)
+   đã bị S2-T10 (`RuleEngine` tuyến tính) chiếm — phát hiện lúc code, không
+   phải lúc đọc ADR/task. Task yêu cầu tên bảng `price_list_v2`/
+   `price_list_item_v2`; áp dụng cùng hậu tố `V2` cho class/repository mới
+   (`PriceListV2Entity`, `PriceListItemV2Entity`, `PriceListV2Status`,
+   `PriceListV2StateException`, `PriceListV2Repository`,
+   `PriceListItemV2Repository`) để tránh xung đột tên trong cùng package —
+   không đổi tên 2 class/repository CŨ (ngoài scope, "KHÔNG đụng
+   price_list/price_list_item"). Ngược lại, port/DTO ở `core-api`
+   (`PriceListService`, `PriceListController`, `PriceListDto`,
+   `PriceListItemDto`...) KHÔNG cần hậu tố `V2` vì không có tên nào trùng ở
+   package `com.cpq.core.api.pricelist` (package mới, riêng biệt với
+   `com.cpq.core.api.pricing` của engine cũ) — chỉ lớp persistence/
+   repository thực sự đụng tên mới cần hậu tố.
+2. **`PriceListItemV2Entity.entityInstanceId` là `Long` thuần, không
+   `@ManyToOne` tới `core-metamodel`'s `EntityInstance`** — theo đúng tiền
+   lệ `PriceListItemEntity` cũ (S2-T10): `core-pricing` **không** phụ
+   thuộc `core-metamodel` (xem Javadoc/`build.gradle.kts` của
+   `core-pricing`, S2-T10 entry). FK thật khai báo ở migration SQL
+   (`V12__price_list_v2.sql`, `REFERENCES entity_instance (id)`) — đủ
+   referential integrity ở DB; `app` (`PriceListServiceImpl`) resolve id
+   thành `EntityInstance` thật khi cần (để bake làm anchor).
+3. **`calculation_graph` tái dùng `DagNodeGraphConverter` nguyên văn**
+   (đúng note của D-045 điểm 3: "task đó tái dùng DagNodeGraphConverter
+   thẳng, không viết lại") — không viết converter mới cho field này.
+   **`waterfall_steps` cần 1 converter MỚI** (`TraceEntryListConverter`,
+   `core-pricing/persistence`): kiểu dữ liệu khác (`List<TraceEntry>`,
+   không phải `List<DagNode>` — generic bị erase, không share converter
+   được) và **không cần normalize lại field `formula.expression` thành
+   `JsonNode`** như `DagNodeGraphConverter` phải làm, vì `waterfall_steps`
+   là dữ liệu audit đọc-only, không bao giờ được chạy lại qua `DagEngine`
+   (khác `calculation_graph`, vốn bị RE-EXECUTE mỗi lần `addItem`).
+4. **Inject anchor vào top-level `calculation_graph`: tách thành utility
+   dùng chung** (`com.cpq.app.pricing.dag.AnchorInjector`, chọn hướng (1)
+   task đề nghị, không duplicate) — tổng quát hoá thêm 1 bước nữa so với
+   D-045 (measure's subgraph chỉ cần inject `query`; Price List's
+   top-level graph cần inject CẢ `query` VÀ `measure-ref`, vì 1 Price List
+   có thể tham chiếu trực tiếp 1 Measure ở top-level). `AnchorInjector`
+   nhận `Set<String> nodeTypesNeedingAnchor` làm tham số để 2 caller
+   (`MeasureRefNodeExecutor` cho subgraph, `PriceListServiceImpl` cho
+   top-level) dùng đúng tập node type của mình.
+   `MeasureRefNodeExecutor.injectAnchorIntoQueryNodesMissingOne` refactor
+   thành 1 dòng delegate — đã chạy lại `MeasureRefNodeExecutorIT` (8/8) +
+   `QueryNodeExecutorIT` (11/11) xác nhận không regress S3-T3/T5.
+5. **State machine (`submit`/`approve`/`requireMutable`) đặt trực tiếp
+   trên `PriceListV2Entity`** (không phải thuần `PriceListServiceImpl`) —
+   cùng mức độ "entity có vài method mutation hẹp, có tên rõ" như
+   `EntityInstance.syncBusinessKey`/`assignAnchorInstance` (S3-T1), khác
+   với `CalculationBindingEntity`/`MeasureDefinitionEntity` (hoàn toàn
+   dumb data, không có invariant trạng thái nào cần bảo vệ). Lý do chọn
+   entity thay vì service: trạng thái DRAFT/PENDING_APPROVAL/APPROVED và
+   invariant của nó ("APPROVED là snapshot vĩnh viễn") thuộc về chính
+   price list, không phải một quyết định của riêng 1 service method —
+   đặt cạnh field `status` dễ đọc/test độc lập hơn (unit test thuần, không
+   cần Spring/DB) so với rải logic if/else trong service. Throw
+   `PriceListV2StateException` (plain `RuntimeException`, không
+   `@ResponseStatus` — `core-pricing` không phụ thuộc Spring MVC, ADR-005);
+   `PriceListServiceImpl` là nơi DUY NHẤT bắt exception này và quy đổi
+   thành `ResponseStatusException(HttpStatus.CONFLICT, ...)` cho tầng
+   HTTP.
+6. **`addItem` bị chặn khi price list KHÔNG ở DRAFT/PENDING_APPROVAL**
+   (`requireMutable()`), không chỉ chặn riêng `APPROVED` — tức
+   `ACTIVE`/`EXPIRED`/`REJECTED` cũng bị chặn, dù S3-T6 không có endpoint
+   nào đưa price list tới các trạng thái đó (chưa reachable qua API hiện
+   tại, đặt sẵn cho tương lai). Done-khi "approve xong gọi lại add-item bị
+   chặn HOẶC result_price không đổi nếu cho tính thử" → chọn **chặn hẳn**
+   (đơn giản hơn, nhất quán với ADR-009 mục 5 "snapshot vĩnh viễn, không
+   tự tính lại") — không có endpoint nào cho "tính thử độc lập không lưu".
+7. **`version` (schema có, API không đổi)**: không có endpoint "sửa
+   `calculation_graph` sau khi tạo" trong scope S3-T6 (task chỉ có
+   tạo/add-item/submit/approve/override) → `version` luôn `1`. ADR-009 mục
+   5 ("approve xong khoá, sửa tiếp tạo version mới") áp dụng khi có
+   endpoint edit-sau-tạo thật — NEEDS-PO-REVIEW nhẹ, để task sau nếu cần
+   sửa `calculation_graph` của 1 Price List đã tồn tại.
+8. **`PriceListItemV2Entity.validFrom/validTo` mặc định copy từ
+   `PriceListV2Entity.validFrom/validTo`** lúc `addItem` tạo item mới —
+   không có field nào trong `AddPriceListItemRequest` cho phép set riêng
+   (task's request body chỉ có `entityInstanceId`). Lựa chọn hợp lý mặc
+   định (CLAUDE.md mục 6): item kế thừa hiệu lực của price list cha, có
+   thể ghi đè ở task sau nếu cần item-level validity khác cha.
+9. **`created_by`/`approved_by` lấy từ
+   `SecurityContextHolder.getContext().getAuthentication().getName()`**
+   (JWT subject khi chạy thật qua Keycloak, hoặc username của
+   `@WithMockUser` trong test) — codebase chưa có tiền lệ nào set 2 cột
+   audit này (engine cũ S2-T10 không có cột `created_by`/`approved_by`);
+   tự quyết theo CLAUDE.md mục 6 + yêu cầu "Audit log cho hành động thay
+   đổi rule/giá" — tối thiểu ghi lại AI/user nào tạo/approve, không làm
+   audit log riêng (ngoài scope S3-T6).
+10. **`core-api`'s DTO (`DagNodeDto`/`TraceEntryDto`/...) là projection
+    thuần, không tái dùng trực tiếp `com.cpq.core.pricing.dag.DagNode`/
+    `TraceEntry`** — giữ đúng tiền lệ đã có ("core-api never returns the
+    core-pricing value type directly", xem Javadoc
+    `WaterfallStepSummary`/S2-T10): `core-api` tiếp tục KHÔNG thêm
+    dependency Gradle tới `core-pricing` (dù ArchUnit/`ModuleLayeringArchTest`
+    hiện tại cho phép, vì không tạo cycle) — giữ `core-api` mỏng/tách rời
+    kiểu dữ liệu nội bộ của engine, đúng nguyên tắc ADR-005 §2 "core-api
+    không chứa business logic". `PriceListServiceImpl` (app) convert 2
+    chiều giữa DTO và record thật.
+11. **RBAC**: cả 5 endpoint `PRICING_ADMIN`-only (`@PreAuthorize("hasRole(
+    'PRICING_ADMIN')")` trên method của port `PriceListService`, đúng
+    pattern `CatalogImportService`) — không có action nào ở module này
+    là read-only/ít nhạy cảm hơn tạo/sửa catalog, nên không mở rộng cho
+    SALES/SALES_MANAGER như `ConfiguratorService`/`PricingCalculationService`.
+12. **Không thêm GET endpoint nào** (`GET /api/price-lists-v2/{id}` hay
+    `.../items`) — ngoài 5 endpoint task liệt kê rõ ("Scope chính xác").
+    Việc xác nhận "đọc lại sau khi đổi nguồn" (Done-khi E8-05) kiểm qua
+    `PriceListItemV2Repository` trực tiếp trong integration test, không
+    qua HTTP — không chặn gì, nhưng để lại cho S3-T7/S3-T8 nếu UI cần đọc.
+13. **Không viết `addItemPricingAdminIs200` ở
+    `PriceListEndpointSecurityIT`** (chỉ có 401/403 cho `addItem`, không
+    có 200): graph tối giản dùng cho test RBAC (1 node `output`) không
+    sinh `BigDecimal` nên sẽ fail ở bước `requireBigDecimalResult`, không
+    phải fail RBAC — dựng graph số thật cho riêng test RBAC là trùng lặp
+    không cần thiết, vì đường "PRICING_ADMIN gọi addItem thành công" đã
+    được `PriceListServiceImplIT` (service-level, cùng method
+    `@PreAuthorize`, chạy dưới `@WithMockUser(roles = "PRICING_ADMIN")`)
+    kiểm đầy đủ rồi.
+Lý do: Theo đúng chỉ dẫn task S3-T6 (ADR-009 mục 5, D-042/D-045, backlog
+E8-05, sprint-3.md S3-T6) — các điểm trên là "tự quyết hợp lý, ghi lý do"
+theo CLAUDE.md mục 6 (ADR-009 không đủ chi tiết để suy ra máy móc: tên
+class/bảng khi đụng tên cũ, cơ chế inject anchor dùng chung, vị trí state
+machine, audit field, ranh giới DTO core-api).
+Hệ quả:
+- `app/src/main/resources/db/migration/V12__price_list_v2.sql` (mới):
+  `price_list_v2`/`price_list_item_v2`.
+- `core-pricing/src/main/java/com/cpq/core/pricing/persistence/` (mới):
+  `PriceListV2Status`, `PriceListV2StateException`, `PriceListV2Entity`,
+  `PriceListItemV2Entity`, `TraceEntryListConverter`.
+- `app/src/main/java/com/cpq/app/pricing/`: `PriceListV2Repository`,
+  `PriceListItemV2Repository` (mới); `dag/AnchorInjector` (mới, utility
+  dùng chung); `dag/MeasureRefNodeExecutor` (sửa: delegate inject-anchor
+  qua `AnchorInjector`, hành vi giữ nguyên 100%).
+- `app/src/main/java/com/cpq/app/pricing/pricelist/` (package mới):
+  `PriceListServiceImpl`.
+- `core-api/src/main/java/com/cpq/core/api/pricelist/` (package mới):
+  `PriceListService`, `PriceListController`, `DagNodeDto`, `TraceEntryDto`,
+  `CreatePriceListRequest`, `PriceListDto`, `AddPriceListItemRequest`,
+  `PriceListItemDto`, `OverridePriceRequest`.
+- Test: `core-pricing` — `TraceEntryListConverterTest` (unit, 4 test,
+  round-trip + BigDecimal preservation). `app` — `AnchorInjectorTest`
+  (unit, 5 test, không cần Spring); `PriceListServiceImplIT`
+  (Testcontainers, 9 test, entity giả định "Gadget"/"GadgetDiscount"/
+  "MarginLevel" — PRODUCT+EXTENSION+PARAMETER, không dùng CUSTOMER vì
+  cách Customer tham gia Price List graph là NEEDS-PO-REVIEW thứ 2 của
+  sprint-3.md, để S3-T7 quyết): multi-source graph ra đúng `result_price`
+  + waterfall đầy đủ; submit/approve state machine + reject sai trạng
+  thái; snapshot sau approve (đổi dữ liệu nguồn EXTENSION xong, add-item
+  mới bị chặn, item cũ đọc lại giá trị không đổi); override là field duy
+  nhất đổi được, không phân biệt trạng thái DRAFT/APPROVED; 404 cho id
+  không tồn tại. `PriceListEndpointSecurityIT` (Testcontainers +
+  MockMvc, 13 test): 401/403/200 cho cả 5 route theo PRICING_ADMIN-only.
+- Chưa làm: seed demo 4 nguồn thật automotive (S3-T7), UI (S3-T8), quyết
+  định migrate engine cũ (NEEDS-PO-REVIEW mở từ ADR-009, chưa đụng).
+- Domain vs engine: toàn bộ class mới generic (không biết "Gadget"/
+  "CostHistory"/"MarginThreshold" nghĩa là gì, chỉ biết "node type X,
+  entity instance Y"); test dùng entity giả định, không automotive. Không
+  business logic domain-specific nào trong `core-pricing`/`app` engine
+  layer.
+Verify: `./gradlew :core-pricing:test` → 79 test pass/0 fail (gồm 4 test
+mới `TraceEntryListConverterTest`). `./gradlew :app:test --tests
+"com.cpq.app.pricing.dag.AnchorInjectorTest" --tests
+"com.cpq.app.pricing.pricelist.PriceListServiceImplIT" --tests
+"com.cpq.app.pricing.pricelist.PriceListEndpointSecurityIT" --tests
+"com.cpq.app.pricing.dag.MeasureRefNodeExecutorIT" --tests
+"com.cpq.app.pricing.dag.QueryNodeExecutorIT"` → 5+9+13+8+11 = 46
+passed/0 failed (không regress S3-T3/T5 sau refactor `AnchorInjector`).
+Sabotage-and-revert check: tạm vô hiệu hoá `PriceListV2Entity.requireMutable()`
+(thêm `false &&` vào điều kiện) →
+`approvedPriceListIsAPermanentSnapshotAddingAnItemAfterApprovalIsBlockedAndSourceDataChangesNeverLeak`
+fail đúng như kỳ vọng; đã revert, `diff` rỗng (xác nhận bằng `diff` với
+bản backup trước khi sabotage). `./gradlew build` (toàn repo): BUILD
+SUCCESSFUL in 1m 33s — `app` 152 test pass/0 fail, `core-pricing` 79 test
+pass/0 fail (tổng từ toàn bộ test-results XML) — không regress Sprint
+1/2/S3-T1..T5/perf fix.

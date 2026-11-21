@@ -174,15 +174,39 @@ task chạy song song (`superpowers:using-git-worktrees`).
 ### S3-T6 — Module Price List: schema + API
 - **Người phụ trách**: backend-dev
 - **Phụ thuộc**: S3-T3, S3-T5
-- **Việc làm**: Theo ADR-009 mục 5 + backlog E8-05. `price_list`/
-  `price_list_item` theo schema đã chốt (`status`/`version`/
-  `calculation_rule_set_id`; `result_price`/`manual_override_price`/
-  `waterfall_steps` JSONB, không tách bảng con). API: tạo Price List, thêm
-  Product, tính qua DAG, submit, approve (snapshot vĩnh viễn — approve
-  xong không tính lại dù binding nguồn đổi).
-- **Done khi**: Done-khi của E8-05 — approve xong sửa dữ liệu nguồn không
-  đổi `result_price` đã approve; `manual_override_price` là field DUY
-  NHẤT sửa tay được.
+- **Trạng thái**: Done (2026-11-21)
+- **Việc làm**: Theo ADR-009 mục 5 + backlog E8-05. `price_list_v2`/
+  `price_list_item_v2` (tên bảng đổi hậu tố `V2` — `price_list`/
+  `price_list_item` đã bị engine cũ S2-T10 chiếm, xem D-046) theo schema
+  đã chốt (`status`/`version`/`calculation_graph`/`result_node_id`;
+  `result_price`/`manual_override_price`/`waterfall_steps` JSONB, không
+  tách bảng con). API (`/api/price-lists-v2/...`, PRICING_ADMIN-only):
+  tạo Price List, thêm Product (inject anchor vào node `query`/
+  `measure-ref` top-level thiếu anchor, tái dùng utility mới
+  `AnchorInjector` — refactor `MeasureRefNodeExecutor` dùng lại), tính qua
+  `MeasureAwareDagEngine`, submit, approve (snapshot vĩnh viễn — approve
+  xong chặn hẳn add-item/recompute dù binding nguồn đổi).
+- **Done khi**: Done-khi của E8-05 — approve xong sửa dữ liệu nguồn
+  (EXTENSION) không đổi `result_price` đã approve (add-item sau approve
+  bị chặn hẳn, item cũ đọc lại giá trị không đổi); `manual_override_price`
+  là field DUY NHẤT sửa tay được, không phân biệt trạng thái DRAFT/
+  APPROVED.
+- **Tóm tắt kết quả**: Migration `V12__price_list_v2.sql`. `core-pricing`
+  thêm `PriceListV2Status`, `PriceListV2StateException`,
+  `PriceListV2Entity` (state machine `submit()`/`approve()`/
+  `requireMutable()`), `PriceListItemV2Entity`, `TraceEntryListConverter`
+  (converter mới cho `waterfall_steps`; `calculation_graph` tái dùng
+  `DagNodeGraphConverter` sẵn có từ S3-T5). `app` thêm
+  `PriceListV2Repository`/`PriceListItemV2Repository`,
+  `dag/AnchorInjector` (utility inject-anchor dùng chung, tách ra từ
+  `MeasureRefNodeExecutor`), `pricing/pricelist/PriceListServiceImpl`.
+  `core-api` thêm package `pricelist` (port + DTO projection thuần, không
+  tái dùng record `core-pricing`). Test: `TraceEntryListConverterTest`
+  (core-pricing, 4), `AnchorInjectorTest` (app, 5),
+  `PriceListServiceImplIT` (app, Testcontainers, 9 — multi-source
+  PRODUCT+EXTENSION+PARAMETER, snapshot, override),
+  `PriceListEndpointSecurityIT` (app, MockMvc, 13 — RBAC 401/403/200 cho
+  cả 5 route). Chi tiết quyết định: `docs/decisions.md` D-046.
 
 ### S3-T7 — Seed Price List demo dùng đủ 4 nguồn
 - **Người phụ trách**: backend-dev
