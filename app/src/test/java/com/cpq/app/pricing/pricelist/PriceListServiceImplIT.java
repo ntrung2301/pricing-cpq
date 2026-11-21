@@ -14,6 +14,7 @@ import com.cpq.core.api.pricelist.AddPriceListItemRequest;
 import com.cpq.core.api.pricelist.CreatePriceListRequest;
 import com.cpq.core.api.pricelist.DagNodeDto;
 import com.cpq.core.api.pricelist.OverridePriceRequest;
+import com.cpq.core.api.pricelist.PriceListDetailDto;
 import com.cpq.core.api.pricelist.PriceListDto;
 import com.cpq.core.api.pricelist.PriceListItemDto;
 import com.cpq.core.api.pricelist.PriceListService;
@@ -400,6 +401,46 @@ class PriceListServiceImplIT extends AbstractIntegrationTest {
     @Test
     void overridePriceOnAnUnknownItemReturns404() {
         assertThatThrownBy(() -> priceListService.overridePrice(-1L, new OverridePriceRequest(BigDecimal.TEN)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+    }
+
+    // --- S3-T8: GET /api/price-lists-v2/{id} (docs/decisions.md D-049) ---
+    // S3-T6 shipped create/addItem/submit/approve/override but no read-back
+    // endpoint; the Measure Canvas UI needs one to show the Calculation
+    // Trace after pricing an item, so this task adds the missing GET.
+
+    @Test
+    void getPriceListReturnsHeaderPlusCalculationGraphAndItemsWithWaterfallSteps() {
+        MultiSourceFixture fixture = createMultiSourceFixture();
+        PriceListDto priceList = createDraftPriceList(fixture, "PLV2_" + UUID.randomUUID());
+        PriceListItemDto item =
+                priceListService.addItem(
+                        priceList.id(), new AddPriceListItemRequest(fixture.gadget().getId()));
+
+        PriceListDetailDto detail = priceListService.getPriceList(priceList.id());
+
+        assertThat(detail.id()).isEqualTo(priceList.id());
+        assertThat(detail.code()).isEqualTo(priceList.code());
+        assertThat(detail.status()).isEqualTo("DRAFT");
+        assertThat(detail.resultNodeId()).isEqualTo("rounded");
+
+        assertThat(detail.calculationGraph()).hasSameSizeAs(buildGraph(fixture));
+        assertThat(detail.calculationGraph().stream().map(DagNodeDto::id).toList())
+                .contains("q_cost", "q_discount", "q_margin", "discounted", "withMargin", "rounded");
+
+        assertThat(detail.items()).hasSize(1);
+        PriceListItemDto detailItem = detail.items().get(0);
+        assertThat(detailItem.id()).isEqualTo(item.id());
+        assertThat(detailItem.resultPrice()).isEqualByComparingTo(item.resultPrice());
+        assertThat(detailItem.waterfallSteps()).isNotEmpty();
+        assertThat(detailItem.waterfallSteps().stream().map(step -> step.nodeId()).toList())
+                .contains("q_cost", "q_discount", "q_margin", "discounted", "withMargin", "rounded");
+    }
+
+    @Test
+    void getPriceListOnAnUnknownIdReturns404() {
+        assertThatThrownBy(() -> priceListService.getPriceList(-1L))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("404");
     }

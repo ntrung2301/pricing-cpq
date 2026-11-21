@@ -245,6 +245,7 @@ task chạy song song (`superpowers:using-git-worktrees`).
 ### S3-T8 — Measure Canvas UI (Ant Design)
 - **Người phụ trách**: frontend-dev
 - **Phụ thuộc**: S3-T6
+- **Trạng thái**: Done (2026-11-21)
 - **Việc làm**: Theo backlog E8-06 — dựng lại đúng mockup đã polish
   (artifact "Measure Canvas": context switcher, palette Data source/
   Measure kéo-thả, canvas + Calculation Trace đồng bộ expand/collapse) với
@@ -252,6 +253,21 @@ task chạy song song (`superpowers:using-git-worktrees`).
   S3-T6 — không mock.
 - **Done khi**: Dựng 1 Price List thật qua UI (dữ liệu S3-T7), xem trace,
   approve — Playwright E2E thật, không mock, theo mẫu `e2e/tests/` đã có.
+- **Tóm tắt kết quả**: `web/src/pricing-v2/*` (`MeasureCanvasPage.tsx` +
+  `MeasureCanvasApp.tsx`, `graphBuilder.ts` — pure UI-node → DagNodeDto[]/
+  resultNodeId, test trước — `priceListV2Api.ts`, `bindingPresets.ts`,
+  `types.ts`), mount qua entry Vite riêng `web/measure-canvas.html` +
+  `web/src/measureCanvasMain.tsx` (không đụng `App.tsx`/`main.tsx` đang
+  được migrate song song). Thêm `GET /api/price-lists-v2/{id}`
+  (`PriceListDetailDto`) còn thiếu từ S3-T6, và vá bug thật
+  `RoundNodeExecutor` (config `nearest` qua JSON HTTP luôn là
+  Integer/Double, chưa bao giờ chạy được qua API thật trước UI này).
+  Playwright E2E (`e2e/tests/measure-canvas.spec.ts`) chạy xanh 2 lần liên
+  tiếp trên stack thật (build/run từ worktree, Postgres+Keycloak dùng
+  chung), cùng 3 suite E2E cũ (Sprint 1/2) vẫn xanh. Chi tiết quyết định:
+  `docs/decisions.md` D-049 (bao gồm 2 NEEDS-PO-REVIEW: Calculation
+  Binding Admin UI chưa có, palette chưa hỗ trợ `weighted-average`/
+  `collect`).
 
 ### S3-T9 — QA: sign-off Sprint 3
 - **Người phụ trách**: qa-engineer

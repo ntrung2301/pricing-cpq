@@ -1,5 +1,6 @@
 package com.cpq.core.api.pricelist;
 
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,5 +54,11 @@ public class PriceListController {
     public PriceListItemDto overridePrice(
             @PathVariable Long itemId, @RequestBody OverridePriceRequest request) {
         return priceListService.overridePrice(itemId, request);
+    }
+
+    /** S3-T8 (docs/decisions.md D-049): read-back for the Measure Canvas UI. */
+    @GetMapping("/api/price-lists-v2/{id}")
+    public PriceListDetailDto getPriceList(@PathVariable Long id) {
+        return priceListService.getPriceList(id);
     }
 }

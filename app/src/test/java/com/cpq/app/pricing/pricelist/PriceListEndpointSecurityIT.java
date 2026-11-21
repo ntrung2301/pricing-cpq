@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+
 import com.cpq.app.pricing.PriceListItemV2Repository;
 import com.cpq.app.pricing.PriceListV2Repository;
 import com.cpq.core.pricing.dag.DagNode;
@@ -246,5 +248,73 @@ class PriceListEndpointSecurityIT extends AbstractIntegrationTest {
                                                                         Map.of("roles", List.of("pricing_admin"))))
                                                 .authorities(new KeycloakRealmRoleConverter())))
                 .andExpect(status().isOk());
+    }
+
+    // --- S3-T8: GET /api/price-lists-v2/{id} (docs/decisions.md D-049) ---
+    // Read-only, so same RBAC level as GET /api/catalog/{code}/instances
+    // (D-030): any of the 3 core roles may call it, not PRICING_ADMIN-only.
+
+    @Test
+    void getPriceListUnauthenticatedIs401() throws Exception {
+        PriceListV2Entity priceList = seedDraftPriceList("SEC_" + UUID.randomUUID());
+        mockMvc.perform(get("/api/price-lists-v2/{id}", priceList.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getPriceListWrongRoleIs403() throws Exception {
+        PriceListV2Entity priceList = seedDraftPriceList("SEC_" + UUID.randomUUID());
+        mockMvc.perform(
+                        get("/api/price-lists-v2/{id}", priceList.getId())
+                                .with(
+                                        jwt().jwt(
+                                                        builder ->
+                                                                builder.claim(
+                                                                        "realm_access", Map.of("roles", List.of("nobody"))))
+                                                .authorities(new KeycloakRealmRoleConverter())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getPriceListSalesIs200() throws Exception {
+        PriceListV2Entity priceList = seedDraftPriceList("SEC_" + UUID.randomUUID());
+        mockMvc.perform(
+                        get("/api/price-lists-v2/{id}", priceList.getId())
+                                .with(
+                                        jwt().jwt(
+                                                        builder ->
+                                                                builder.claim(
+                                                                        "realm_access", Map.of("roles", List.of("sales"))))
+                                                .authorities(new KeycloakRealmRoleConverter())))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getPriceListPricingAdminIs200() throws Exception {
+        PriceListV2Entity priceList = seedDraftPriceList("SEC_" + UUID.randomUUID());
+        mockMvc.perform(
+                        get("/api/price-lists-v2/{id}", priceList.getId())
+                                .with(
+                                        jwt().jwt(
+                                                        builder ->
+                                                                builder.claim(
+                                                                        "realm_access",
+                                                                        Map.of("roles", List.of("pricing_admin"))))
+                                                .authorities(new KeycloakRealmRoleConverter())))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getPriceListOnUnknownIdIs404() throws Exception {
+        mockMvc.perform(
+                        get("/api/price-lists-v2/{id}", -1L)
+                                .with(
+                                        jwt().jwt(
+                                                        builder ->
+                                                                builder.claim(
+                                                                        "realm_access",
+                                                                        Map.of("roles", List.of("pricing_admin"))))
+                                                .authorities(new KeycloakRealmRoleConverter())))
+                .andExpect(status().isNotFound());
     }
 }
