@@ -2928,3 +2928,175 @@ liên tiếp: build graph qua kéo-thả thật → `POST /api/price-lists-v2` t
 `approve` thật chuyển đúng trạng thái. 3 E2E suite cũ (`walking-skeleton`,
 `vehicle-part-selection`, `pricing-determinism-api`) chạy cùng lúc vẫn
 xanh — không regress Sprint 1/2.
+
+## D-050 — Hoàn tất migrate MUI → Ant Design toàn bộ, xoá hẳn dependency MUI,
+áp dụng design token `web/design.md` (2026-11-21, frontend-dev)
+
+**Bối cảnh**: Yêu cầu trực tiếp từ PO (ngoài sprint-3.md, ưu tiên ngay):
+dựng lại Login/navbar-sidebar/DataTable bằng Ant Design + token
+`web/design.md` (ClickUp-style: Plus Jakarta Sans/Inter, nền trắng, accent
+tím `#6647f0`/xanh `#0091ff`, pill radius `9999px`, card radius `12px`,
+input radius `9px`), migrate nốt 4 màn nghiệp vụ còn dùng MUI
+(`EntitiesList`, `VehiclePartSelectionScreen`, `PriceWaterfallScreen`,
+`InstanceTable`), và xoá hẳn `@mui/material`/`@emotion/*` khỏi
+`package.json`. `web/design.md` không tồn tại trong worktree này lúc nhận
+việc (chỉ có ở checkout chính, chưa commit) — đã copy nguyên văn vào
+worktree trước khi bắt đầu, không phải tạo lại từ trí nhớ.
+
+### 1. Token: tập trung vào `UIProvider.tsx`/`styles.css`, không rải hard-code
+
+Theo đúng chỉ dẫn task: toàn bộ token màu/font/radius/shadow của
+`design.md` được đổ vào `web/src/ui/styles.css` (`:root` CSS variables:
+`--canvas/--ink/--onyx/--carbon/--slate/--ash/--fog/--cloud/--bone/--mist/
+--plaster/--mercury/--violet/--blue/--mint/--emerald/--teal-tag`,
+`--font-body/--font-display`, `--radius-pill/--radius-card/--radius-input`)
+và `web/src/ui/UIProvider.tsx` (cả 2 theme Ant — `theme` cho toàn app và
+`compactTheme` cho `AppShell`/workspace — giờ dùng cùng 1 bảng màu: Ink
+Black `#202020` làm `colorPrimary`/CTA fill, Signal Blue `#0091ff` làm
+`colorLink`, border-radius 9999 cho Button, 9 cho Input/Select, 12 cho
+Card). `compactTheme` trước đó là 1 theme teal placeholder hoàn toàn
+không liên quan `design.md` (`colorPrimary: '#27776f'`) — thay luôn để
+toàn bộ shell nhất quán, không để 2 theme lệch nhau.
+
+**Phát hiện phụ**: `web/src/workspace/AppShell.tsx` và `HomeScreen.tsx`
+(nền Ant Design từ D-048, do 1 phiên khác dựng) **chưa từng có file CSS
+nào style các class name của nó** (`.workspace-topbar`, `.workspace-sider`,
+`.workspace-navigation`, `.home-action-card`, v.v. — hoàn toàn không xuất
+hiện trong bất kỳ file `.css` nào trong repo trước commit này) — tức là
+trước migrate này, `AppShell` chưa từng được mount vào ứng dụng thật và
+sẽ hiển thị như các `<div>`/`<a>` trần không style nếu dùng. Việc "áp lại
+token" cho navbar/sidebar vì vậy không phải chỉnh màu trên CSS có sẵn, mà
+là **viết CSS lần đầu** cho toàn bộ shell — thêm file mới
+`web/src/workspace/workspace.css` (import trong `AppShell.tsx`), dùng các
+CSS variable ở `ui/styles.css` làm nguồn chân lý. Đã verify bằng browser
+thật (Chrome automation) sau khi wire vào `App.tsx` — xem mục 4.
+
+### 2. 4 màn nghiệp vụ: giữ nguyên logic, đổi JSX; `InstanceTable` →
+dùng chung `DataTable`
+
+- `LoginScreen`/`EntitiesList`/`VehiclePartSelectionScreen`/
+  `PriceWaterfallScreen`: chỉ đổi import MUI → Ant/`ui/*`, không đổi 1
+  dòng logic nghiệp vụ nào (API call, query key, state, công thức tính
+  `quantity * finalAmount`, entity_def code `Vehicle`/`Product`/`Customer`,
+  rule_set/price_list code). Props/API của `InstanceTable` giữ y nguyên
+  (`rows/emptyMessage/selectedRowId/onSelectRow/selectActionLabel/
+  renderRowFooter`) nên `VehiclePartSelectionScreen` không cần sửa cách gọi.
+- **Quyết định `InstanceTable`**: thay hẳn bằng `web/src/ui/DataTable.tsx`
+  (table Ant Design dùng chung) thay vì giữ bảng MUI viết tay — đúng
+  khuyến nghị của task ("tái dùng cho mọi màn"), và cột vẫn derive từ
+  `Object.keys(rows[0].attributes)` nên tính generic [core] (không
+  hardcode tên field domain) không đổi.
+- **Quyết định waterfall table KHÔNG dùng `DataTable`**: bảng waterfall
+  trong `PriceWaterfallScreen` dùng 1 `<table aria-label="price waterfall">`
+  HTML thuần (styled bằng class `.waterfall-table`, token `--radius-card`/
+  `--bone`), không phải Ant `Table`/`DataTable` dùng chung. Lý do: 3 E2E
+  spec cũ định vị bảng này bằng `page.getByRole('table', { name: /price
+  waterfall/i })` — Ant's `Table` không có cách khai báo trực tiếp
+  `aria-label` lên thẻ `<table>` bên trong (nó bọc nhiều `div` quanh
+  `<table>` của `rc-table`), nên cách chắc chắn nhất giữ đúng
+  `role="table"` + accessible name này (không phải đoán, không phải thử
+  nhiều lần) là giữ semantic HTML thuần — bảng này cũng không cần
+  sort/filter/pagination nên không mất tính năng gì. Đây không phải trộn
+  component library (chỉ là HTML, không phải MUI/Bootstrap khác), và
+  `AppShell` cũng đã dùng nhiều thẻ HTML thuần (`<nav>`, `<a>`) cạnh Ant,
+  nên nhất quán với phần còn lại của codebase.
+- Ant `Select` cho "Chọn xe"/"Khách hàng" dùng đúng pattern đã có sẵn và
+  đã test qua thật trong `MeasureCanvasPage.tsx` (D-049): bọc trong `Field`
+  (label gắn `htmlFor`/`id` khớp với Select, cho accessible name đúng
+  cách), và bắt buộc `virtual={false}` — thiếu cờ này, Playwright/Testing
+  Library click vào `option` trong dropdown ảo (`rc-virtual-list`) không
+  luôn kích hoạt `onChange` trong môi trường test/jsdom (phát hiện qua 2
+  test unit fail lần đầu, sửa xong pass — không phải đoán).
+
+### 3. `App.tsx`/`main.tsx`: wire `AppShell` + hash routing đơn giản,
+không thêm `react-router`
+
+`App.tsx` giờ render `AppShell` (navbar/sidebar thật) thay vì
+`MUI Container` trần, với state trang lấy từ `window.location.hash`
+(cùng cơ chế `href="#configurator"`/`"#definitions"` mà `AppShell`/
+`workspacePages` đã dùng sẵn — không thêm thư viện routing mới, đúng tinh
+thần "đừng over-engineer" task cho phép). Mở rộng `workspacePages` thêm 1
+key mới `configurator` (toàn bộ luồng "chọn xe → chọn part → giá/
+waterfall" của `VehiclePartSelectionScreen`, vốn đã tự nhúng
+`PriceWaterfallScreen` bên trong, không tách route riêng — giữ nguyên như
+trước migrate), và tái dùng key `definitions` có sẵn cho `EntitiesList`
+(khái niệm "entity definitions" = "catalog definitions", không cần thêm
+key mới). **Không** wire `home`/`products`/`catalog` (đã có sẵn
+`HomeScreen`/`ProductsPage` từ phiên khác) vào `pages` — các màn đó dùng
+mock data/`href` trỏ tới key `catalog` chưa tồn tại trong phạm vi migrate
+này; wire vào sẽ tạo liên kết chết hoặc trộn dữ liệu giả vào 1 luồng vốn
+toàn dữ liệu thật, ngoài phạm vi PO giao. Route mặc định khi không có
+hash = `configurator`, giữ đúng hành vi cũ (đăng nhập xong thấy ngay
+"Chọn xe / Chọn part", không cần click thêm) — `App.test.tsx`/3 E2E spec
+cũ không cần sửa selector vì heading này vẫn render y hệt qua
+`AppShell`'s `title` prop.
+
+`UIProvider` chuyển vào trong `App.tsx` (bọc toàn bộ cây, kể cả màn
+loading/error/login) thay vì ở ngoài `main.tsx` cạnh `ThemeProvider` MUI
+cũ — xoá hẳn `theme.ts` (MUI `createTheme`, không còn dùng).
+
+**Test cần sửa theo** (do đổi cấu trúc `App.tsx`, không phải do đổi
+business logic): `App.test.tsx` test đầu tiên trước đây assert heading
+tĩnh "CPQ Pricing Platform" (chữ của `MUI Container` cũ) luôn hiển thị dù
+đang loading — heading này không có trong `AppShell` (giờ mỗi trang có
+tiêu đề riêng theo `page`), và không có E2E nào từng assert chuỗi này
+(chỉ unit test). Đổi assertion sang kiểm tra spinner loading
+(`aria-label="Loading authentication state"`) — vẫn đúng tinh thần test
+gốc ("hiển thị gì đó hợp lý trong lúc chờ auth"), không giảm coverage.
+
+### 4. Verify
+
+`cd web && npx vitest run` → 41/41 pass (bao gồm `designSystem.test.ts`
+giờ PASS — trước đó fail đúng kỳ vọng vì còn `@mui/material` trong
+`package.json`, D-048). `npx tsc -b` → sạch. `npm run build` → sinh đúng
+`dist/index.html` + `dist/measure-canvas.html`. `grep -rln "@mui\|@emotion"
+web/src web/package.json` → chỉ còn `web/src/test/designSystem.test.ts`
+(test tự assert KHÔNG còn 2 dependency này — chuỗi `@mui`/`@emotion` xuất
+hiện trong chính câu lệnh assertion, không phải import thật).
+
+E2E thật (`cd e2e && npx playwright test`, stack thật: Postgres + Keycloak
+qua `docker compose up -d postgres keycloak`, `./gradlew :app:bootRun`
+build từ worktree này với Java 21 qua Gradle toolchain, `npm run dev` của
+`web` tại `localhost:5173`) → cả 4 suite xanh (`walking-skeleton`,
+`vehicle-part-selection`, `pricing-determinism-api`,
+`measure-canvas` — suite này không hề bị đụng tới, xanh nguyên như cũ),
+chạy lại lần 2 liên tiếp vẫn xanh, không flaky. **3 E2E spec cũ không cần
+sửa 1 dòng selector nào** — DOM Ant mới vẫn khớp mọi `getByRole`/
+`getByText` sẵn có (role `combobox`/`option`/`table`/`button` + accessible
+name đều được giữ nguyên chủ đích khi viết lại JSX, xem mục 2) — chứng tỏ
+hành vi nghiệp vụ (chọn xe, lọc part tương thích, tính giá, waterfall
+đúng số 55 → 46.75) không đổi, chỉ UI đổi.
+
+Verify bằng browser thật (Chrome automation, không chỉ đoán qua code):
+đăng nhập Keycloak thật → `Configurator` (mặc định, pill nav item tô xanh
+nhạt khi active) → chọn "Toyota Camry 2018" → lọc đúng 4 part tương thích
+→ chọn "Brake Pad Set Front" → chọn khách hàng "Acme Motors OEM Division"
+→ waterfall hiện đúng 3 bước List price 55 → OEM tier discount -8.25 →
+Final price 46.75, Giá cuối 46.75 — khớp 100% số liệu đã biết trước
+(docs/decisions.md D-034). Chuyển sang "Catalog definitions" (hash
+`#definitions`) → bảng Ant hiện đúng 6 entity_def thật từ DB
+(CostHistory/Customer/MarginThreshold/Product/SampleWidget/Vehicle). Token
+áp đúng: nền trắng, heading Plus Jakarta Sans đậm tracking âm, nút/badge
+pill `9999px` (nút "Chọn part này"/"Tìm part tương thích"), card/table
+border-radius, chữ `#202020`/`#646464`, nav item active dùng `#0091ff`
+tint xanh (không dùng tím `#6647f0` cho CTA, đúng "Do/Don't" của
+`design.md`).
+
+**Xung đột môi trường cục bộ phát hiện khi verify**: cổng `5173` (cổng
+Keycloak client `cpq-web` đăng ký cố định redirect URI
+`http://localhost:5173/*`, không wildcard) đang bị chiếm bởi 1 tiến trình
+`vite` chạy từ checkout chính (`/Users/trungnguyen/Documents/Projects/
+pricing-cpq/web`, không phải worktree này) — dừng tiến trình đó
+(`kill`, không phải thao tác git/phá dữ liệu, có thể khởi động lại bất kỳ
+lúc nào bằng `npm run dev`) để chạy dev server của worktree này trên đúng
+cổng Keycloak yêu cầu. Ghi lại ở đây vì đây là thay đổi ngoài phạm vi file
+code, nhưng cần thiết để verify E2E thật theo đúng yêu cầu task.
+
+**NEEDS-PO-REVIEW**: 2 quyết định tự chọn khi thiếu hướng dẫn cụ thể
+trong task — (1) không wire `home`/`products`/`catalog` vào `AppShell`
+(giữ nguyên, chưa xoá, chỉ không dùng trong `pages` của `App.tsx`); (2)
+dùng HTML `<table>` thuần cho waterfall thay vì Ant `DataTable` dùng
+chung. Cả 2 đều có lý do kỹ thuật cụ thể ở trên, không phải bỏ qua yêu
+cầu — nhưng PO có thể muốn khác (vd. thêm Home/Products vào luồng chính ở
+sprint sau, hoặc chấp nhận bỏ `role="table"` assertion để dùng `DataTable`
+đồng bộ 100%).
