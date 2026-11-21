@@ -2805,3 +2805,126 @@ nếu tiếp tục làm trên cùng các file (`web/src/ui/*`,
 file đó giờ là tracked/clean (không còn "chưa commit" nữa) — thay đổi tiếp
 theo ở phiên đó sẽ hiện ra như sửa đổi (modified), không phải file mới,
 điều này là bình thường và mong đợi sau khi 1 trong 2 phiên commit trước.
+
+## D-049 — S3-T8: Measure Canvas UI (Ant Design) — GET read-back endpoint,
+round-node BigDecimal fix, drag-drop/UI scope decisions (2026-11-21,
+frontend-dev)
+
+**Bối cảnh**: S3-T8 (backlog E8-06) yêu cầu dựng UI Measure Canvas (context
+switcher, palette kéo-thả Data source/Measure, canvas + Calculation Trace
+panel đồng bộ expand/collapse) gọi API thật S3-T6/S3-T8
+(`/api/price-lists-v2/...`), chứng minh bằng Playwright E2E thật (không
+mock): tạo 1 Price List mới qua UI, xem trace, approve.
+
+### 1. Thêm `GET /api/price-lists-v2/{id}` (đã được task cho phép trước)
+
+S3-T6 chỉ có create/addItem/submit/approve/override, không có cách đọc lại
+Price List + item + trace. Thêm `PriceListDetailDto` (header +
+`calculationGraph` + `items[]`, mỗi item có `waterfallSteps`), method
+`PriceListService.getPriceList(Long)` (RBAC
+`hasAnyRole('SALES','SALES_MANAGER','PRICING_ADMIN')` — cùng mức với các
+GET read-only khác, vd `EntityInstanceQueryService`, D-030 — không
+`PRICING_ADMIN`-only như các hành động ghi), và route GET trong
+`PriceListController`. TDD: test thêm trước
+(`PriceListServiceImplIT.getPriceListReturnsHeaderPlusCalculationGraphAndItemsWithWaterfallSteps`/
+`getPriceListOnAnUnknownIdReturns404`, và 4 security test tương ứng trong
+`PriceListEndpointSecurityIT`), implement sau.
+
+### 2. Phát hiện + vá bug thật: `round` node không chạy được qua JSON HTTP thật
+
+Khi build graph qua UI và gọi `POST .../items` thật, `addItem` trả 500:
+`DagValidationException: round node 'r_4' requires config "nearest" as a
+BigDecimal, got 1`. Nguyên nhân gốc: **mọi test `round` node từ trước tới
+giờ** (`RoundNodeExecutorTest`, `PriceListServiceImplIT`,
+`PriceListDemoSeedRunner`) đều dựng `DagNode`/`DagNodeDto` **trực tiếp
+trong Java** với `new BigDecimal(...)` — chưa test nào đi qua JSON thật.
+Khi `CreatePriceListRequest` được Jackson deserialize từ body HTTP thật,
+`config` là `Map<String, Object>` không có type hint theo field, nên một
+số JSON (`"nearest": 1`) luôn ra `Integer`/`Double`, không bao giờ ra
+`BigDecimal` — nghĩa là **không Price List nào dùng `round` node tạo qua
+API thật (trước UI này) từng chạy được**, bug này tồn tại từ S3-T6, chỉ lộ
+ra khi có UI thật gọi qua JSON lần đầu.
+
+**Quyết định**: Sửa `RoundNodeExecutor.requireBigDecimalConfig` (core-pricing)
+để chấp nhận bất kỳ `Number` nào (convert qua `new
+BigDecimal(number.toString())`, tránh sai số binary-float của
+`BigDecimal.valueOf(double)`), không chỉ `BigDecimal` chính xác tuyệt đối.
+TDD: 2 test thêm trước (`acceptsAnIntegerNearestConfig_...`/
+`acceptsADoubleNearestConfig_...`), thấy fail, rồi sửa.
+`RoundNodeExecutor` không nằm trong danh sách cấm sửa của task này
+(`PriceListServiceImpl`/`DagEngine`/`MeasureAwareDagEngine`) — đây là vá
+lỗi thật ở lớp node executor phát hiện khi làm UI, theo đúng tinh thần
+"lỗ hổng hợp lý cần vá, viết test trước, ghi quyết định" mà task đã cho
+phép cho GET endpoint ở mục 1.
+
+### 3. Không sửa `App.tsx`/`main.tsx` — entry point Vite riêng
+
+`App.tsx`/`main.tsx` đang được 1 phiên khác migrate MUI→AntD song song
+(sprint-3.md: "không cần tự migrate lại các màn cũ"); `App.tsx` còn nằm
+trong danh sách "KHÔNG làm" của task này. Vì không có route/React Router
+nào tồn tại để "thêm 1 trang" vào ứng dụng hiện tại mà không đụng
+`App.tsx`, chọn: **1 Vite multi-page entry độc lập**
+(`web/measure-canvas.html` + `web/src/measureCanvasMain.tsx` +
+`web/src/pricing-v2/MeasureCanvasApp.tsx`), tách biệt hoàn toàn khỏi
+`App.tsx`/`main.tsx` — không có khả năng xung đột merge với phiên kia.
+`web/vite.config.ts` thêm `build.rollupOptions.input` liệt kê cả 2 trang
+(Vite build mặc định chỉ build `index.html`, không tự phát hiện trang
+multi-page khác). Login screen riêng cho trang này là 1 màn Ant Design
+mới nhỏ (`MeasureCanvasApp.tsx`), không tái dùng `LoginScreen.tsx` (MUI) —
+đúng nguyên tắc "1 component library đã chốt, không trộn nhiều lib"
+(frontend-dev.md). `measureCanvasAuthConfig.ts` dùng cùng Keycloak
+realm/client thật (`cpq-web`) nhưng `redirect_uri` trỏ về
+`/measure-canvas.html` — hợp lệ vì `cpq-web`'s registered redirect URI là
+wildcard `http://localhost:5173/*` (không cần sửa `keycloak/realm-export.json`).
+
+### 4. Kéo-thả: native HTML5 drag-and-drop, không dùng thư viện
+
+Mockup gốc ("Measure Canvas" artifact) tự xây bằng `draggable`/
+`dragstart`/`dragover`/`drop` thuần, không thư viện. Theo đúng tinh thần
+đó và "đừng over-engineer" (task cho phép), chọn **native HTML5 DnD**
+(`draggable` + `dataTransfer`), không thêm `@dnd-kit`/`react-dnd`. Canvas
+là 1 **chuỗi node tuyến tính append-only** (không phải graph editor tự do
+nối port bằng tay) — mỗi node mới thêm vào cuối danh sách; input/inputs
+của formula/round được chọn qua dropdown tham chiếu node đã có (không vẽ
+dây nối bằng chuột). Đủ để sinh đúng `DagNodeDto[]`/`resultNodeId` thật,
+ưu tiên đúng như task yêu cầu ("đúng luồng API thật, đúng cấu trúc JSON,
+đừng over-engineer kéo-thả").
+
+### 5. Data source palette: Calculation Binding preset cố định, chưa có Binding Admin UI
+
+Node `query` cần 1 `CalculationBindingEntity.attributeCode` **đã tồn tại**
+(ADR-009 mục 3) — chưa có Binding Admin UI/API liệt kê binding nào (ngoài
+phạm vi task này). `web/src/pricing-v2/bindingPresets.ts` hard-code 2
+binding có thật đã được seed bởi `PriceListDemoSeedRunner` (S3-T7):
+`plv2_product_country_of_manufacture` (PRODUCT, tự động anchor theo
+Product đang định giá) và `plv2_customer_tier` (CUSTOMER, bắt buộc chọn
+tường minh 1 Customer instance — không bao giờ tự anchor theo Product,
+đúng theo `AnchorInjector`/`QueryNodeExecutor`). **NEEDS-PO-REVIEW**: cần 1
+Calculation Binding Admin UI + API liệt kê thật trong sprint sau; đây là
+giải pháp tạm hợp lý để UI này hoạt động thật (không mock) mà không lấn
+sang việc xây dựng admin UI riêng (ngoài phạm vi S3-T8).
+
+### 6. Không đưa `weighted-average`/`collect` vào palette kéo-thả
+
+2 node type này (S3-T2/S3-T7) cần nhiều `query` node zip qua `output`/
+`collect` trước khi dùng được (xem `PriceListDemoSeedRunner` — đã có thật,
+dùng để xem trace của Price List demo seed) — quá phức tạp để làm 1 flow
+kéo-thả mặc định hợp lý trong phạm vi task này mà không over-engineer.
+UI này vẫn hiển thị đúng trace của Price List demo (PL-DEMO-BRK-PAD-NEW-001)
+nếu xem qua GET trực tiếp bằng id; palette chỉ thiếu khả năng *tạo mới*
+graph dùng 2 node này qua kéo-thả.
+
+**Verify**: `./gradlew build` → `BUILD SUCCESSFUL` (bao gồm
+`RoundNodeExecutorTest`, `PriceListServiceImplIT`,
+`PriceListEndpointSecurityIT` mới/sửa). `web`: `npx vitest run` → 40
+passed/1 failed đúng kỳ vọng (`designSystem.test.ts`, D-048). `npm run
+build` → sinh cả `dist/index.html` và `dist/measure-canvas.html`.
+Playwright E2E thật (`e2e/tests/measure-canvas.spec.ts`, stack thật: Postgres
++ Keycloak + Spring Boot app build từ worktree này + Vite dev server,
+login Keycloak thật bằng user `pricing-admin@example.com`) chạy xanh 2 lần
+liên tiếp: build graph qua kéo-thả thật → `POST /api/price-lists-v2` thật
+→ `POST .../items` thật (result price = 65, đúng 50 × 1.3 làm tròn lên
+1) → `GET /api/price-lists-v2/{id}` thật hiển thị đúng trace → `submit`/
+`approve` thật chuyển đúng trạng thái. 3 E2E suite cũ (`walking-skeleton`,
+`vehicle-part-selection`, `pricing-determinism-api`) chạy cùng lúc vẫn
+xanh — không regress Sprint 1/2.
