@@ -25,15 +25,34 @@ import org.springframework.stereotype.Component;
 public class AppDagNodeExecutors {
 
     private final QueryNodeExecutor queryNodeExecutor;
+    private final MeasureRefNodeExecutor measureRefNodeExecutor;
 
-    public AppDagNodeExecutors(QueryNodeExecutor queryNodeExecutor) {
+    public AppDagNodeExecutors(QueryNodeExecutor queryNodeExecutor, MeasureRefNodeExecutor measureRefNodeExecutor) {
         this.queryNodeExecutor = queryNodeExecutor;
+        this.measureRefNodeExecutor = measureRefNodeExecutor;
     }
 
     /** The registry to construct a {@link DagEngine} with when a graph uses {@code query} nodes. */
     public Map<String, DagNodeExecutor> withQuery() {
         Map<String, DagNodeExecutor> executors = new LinkedHashMap<>(DagNodeExecutors.standard());
         executors.put("query", queryNodeExecutor);
+        return executors;
+    }
+
+    /**
+     * {@code withQuery()} plus {@code measure-ref} (S3-T5) — the registry
+     * for a TOP-LEVEL graph that may reference a Measure. Deliberately not
+     * depended on by {@link MeasureRefNodeExecutor} itself for running a
+     * measure's own subgraph (that would be a constructor cycle: this
+     * class would need the executor, which would need this class) —
+     * {@code MeasureRefNodeExecutor} builds its own minimal {@code
+     * query}+standard registry directly instead (nested measure-ref isn't
+     * supported yet anyway, so its subgraph registry never needs {@code
+     * measure-ref}).
+     */
+    public Map<String, DagNodeExecutor> withQueryAndMeasure() {
+        Map<String, DagNodeExecutor> executors = new LinkedHashMap<>(withQuery());
+        executors.put("measure-ref", measureRefNodeExecutor);
         return executors;
     }
 }
