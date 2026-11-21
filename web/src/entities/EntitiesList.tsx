@@ -1,21 +1,25 @@
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import CircularProgress from '@mui/material/CircularProgress'
-import Paper from '@mui/material/Paper'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Typography from '@mui/material/Typography'
+import { Alert, Spin } from 'antd'
+import type { TableColumnsType } from 'antd'
 import { useQuery } from '@tanstack/react-query'
+import { DataTable } from '../ui'
 import { fetchEntities } from './entitiesApi'
+import type { EntityDefinitionSummary } from './types'
 
 interface EntitiesListProps {
   /** Real OIDC access token from the authenticated session (react-oidc-context). */
   accessToken: string
 }
+
+const columns: TableColumnsType<EntityDefinitionSummary> = [
+  { title: 'Code', dataIndex: 'code' },
+  { title: 'Label', dataIndex: 'label' },
+  { title: 'Version', dataIndex: 'version' },
+  {
+    title: 'Attributes',
+    align: 'right',
+    render: (_, entityDefinition) => entityDefinition.attributes.length,
+  },
+]
 
 /**
  * S1-T8 walking-skeleton screen: calls the real `GET /api/entities`
@@ -23,6 +27,9 @@ interface EntitiesListProps {
  * core UI, no hardcoded domain field names (CLAUDE.md "Ranh gioi Core vs
  * Domain" / frontend-dev Definition of Done), just whatever
  * code/label/version/attribute-count the backend returns.
+ *
+ * Migrated from MUI to Ant Design (the shared `DataTable`) + web/design.md
+ * tokens (D-050) — logic/API call unchanged, only the JSX.
  */
 export function EntitiesList({ accessToken }: EntitiesListProps) {
   const { data, isLoading, isError, error } = useQuery({
@@ -32,42 +39,27 @@ export function EntitiesList({ accessToken }: EntitiesListProps) {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress aria-label="Loading entity definitions" />
-      </Box>
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
+        <Spin aria-label="Loading entity definitions" />
+      </div>
     )
   }
 
   if (isError) {
-    return <Alert severity="error">{(error as Error).message}</Alert>
+    return <Alert type="error" message={(error as Error).message} />
   }
 
   if (!data || data.length === 0) {
-    return <Typography>No entity definitions found.</Typography>
+    return <p>No entity definitions found.</p>
   }
 
   return (
-    <TableContainer component={Paper}>
-      <Table aria-label="entity definitions">
-        <TableHead>
-          <TableRow>
-            <TableCell>Code</TableCell>
-            <TableCell>Label</TableCell>
-            <TableCell>Version</TableCell>
-            <TableCell align="right">Attributes</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {data.map((entityDefinition) => (
-            <TableRow key={entityDefinition.code}>
-              <TableCell>{entityDefinition.code}</TableCell>
-              <TableCell>{entityDefinition.label}</TableCell>
-              <TableCell>{entityDefinition.version}</TableCell>
-              <TableCell align="right">{entityDefinition.attributes.length}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <DataTable<EntityDefinitionSummary>
+      aria-label="entity definitions"
+      rowKey="code"
+      columns={columns}
+      dataSource={data}
+      pageSize={false}
+    />
   )
 }
