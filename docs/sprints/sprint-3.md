@@ -150,6 +150,26 @@ task chạy song song (`superpowers:using-git-worktrees`).
   anchor hiện tại — không hardcode 1 instance cụ thể, giống POC đã verify).
 - **Done khi**: Done-khi của E8-04 — 1 measure, 2 graph khác nhau tham
   chiếu, ra đúng giá trị + trace đầy đủ ở cả 2 nơi.
+- **Trạng thái: Done** (2026-11-21, backend-dev). Migration
+  `V11__measure_definition.sql`; `MeasureDefinitionEntity` +
+  `DagNodeGraphConverter` (JPA `AttributeConverter`, `List<DagNode>` <->
+  `jsonb`, `core-pricing/persistence`); `MeasureRefNodeExecutor` + mới
+  `MeasureAwareDagEngine` (`app/.../pricing/dag`) — anchor được inject vào
+  mọi node `query` con thiếu `anchorInstanceId` (không ghi đè node đã có
+  sẵn anchor baked-in); trace graph con được transclude đầy đủ vào trace
+  top-level (nodeId tiền tố `"<measureRefNodeId>:<measureCode>:<innerId>"`)
+  qua 1 `ThreadLocal` buffer do `MeasureAwareDagEngine` reset/drain —
+  không sửa `DagEngine`/4 executor chuẩn. `AppDagNodeExecutors` thêm
+  `withQueryAndMeasure()`. 4 unit test (`DagNodeGraphConverterTest`) + 8
+  test tích hợp (`MeasureRefNodeExecutorIT`, Testcontainers, entity giả
+  định "Gadget") — toàn bộ pass, có sabotage-and-revert check xác nhận
+  không vacuous. Nested measure-ref (measure gọi measure khác) chưa hỗ
+  trợ — throw lỗi rõ "not supported yet". Quyết định chi tiết (jsonb
+  binding cần `compileOnly hibernate-core` ở `core-pricing`, normalize
+  `formula` expression khi đọc lại JSON, cơ chế transclude trace qua
+  ThreadLocal, tránh dependency cycle Spring...): `docs/decisions.md`
+  D-045. Chưa làm: Price List module (S3-T6, dùng lại Measure ở đây). PR:
+  branch `sprint3-s3-t5-measure`, chưa merge.
 
 ### S3-T6 — Module Price List: schema + API
 - **Người phụ trách**: backend-dev

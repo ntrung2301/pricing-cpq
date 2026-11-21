@@ -2268,3 +2268,138 @@ bị động tới, không ảnh hưởng ranh giới core/domain.
 
 Verify: xem báo cáo backend-dev cho log đầy đủ của cả 2 lần chạy
 (`./gradlew :app:test --rerun` trước/sau) + `./gradlew build --rerun`.
+
+## D-045 — S3-T5: Measure (`measure_definition` + node `measure-ref`) — trace transclusion qua `ThreadLocal`, không sửa `DagEngine` (2026-11-21, backend-dev)
+Quyết định (các điểm không hiển nhiên trong implementation của E8-04/
+ADR-009 mục 2 "Measure"):
+1. **`measure_definition.graph` lưu `List<DagNode>` qua JPA
+   `AttributeConverter` (`DagNodeGraphConverter`, `core-pricing/persistence`,
+   mới) + `@JdbcTypeCode(SqlTypes.JSON)`** trên field entity
+   (`MeasureDefinitionEntity.graph`) — cột là `jsonb` thật (đúng schema task
+   yêu cầu), không phải `text`/`varchar`. Không có `@JdbcTypeCode` này,
+   Hibernate bind `String` đã convert như `varchar`, insert/update vào cột
+   `jsonb` lỗi ngay ("column \"graph\" is of type jsonb but expression is
+   of type character varying") — đã verify lỗi này thật khi thử bản đầu
+   không có annotation, trước khi thêm.
+2. **Ngoại lệ hẹp, có chủ ý, cho nguyên tắc "`core-pricing` không phụ thuộc
+   Hibernate"** (đã nêu rõ trong Javadoc `CalculationBindingEntity`, D-042):
+   thêm `compileOnly("org.hibernate.orm:hibernate-core")` vào
+   `core-pricing/build.gradle.kts` — chỉ để annotation
+   `org.hibernate.annotations.JdbcTypeCode`/`org.hibernate.type.SqlTypes`
+   resolve được lúc compile `MeasureDefinitionEntity`. `compileOnly` không
+   lan dependency này sang runtime của bất kỳ module nào — `app` đã tự có
+   `hibernate-core` thật ở runtime (qua `spring-boot-starter-data-jpa`) để
+   xử lý annotation đó khi Hibernate bootstrap thật. **NEEDS-PO-REVIEW nhẹ**:
+   đây là lần đầu `core-pricing` cần biết tên 1 class Hibernate cụ thể (dù
+   chỉ compile-time) — nếu PO muốn giữ ranh giới tuyệt đối 0%, cách khác là
+   cột `text` thường + ép kiểu qua `orm.xml` override ở `app` (phức tạp hơn
+   nhiều, không làm trong task này).
+3. **`DagNodeGraphConverter` normalize riêng 1 trường hợp khi đọc lại**:
+   node type `formula`, field config `expression`, phải là 1
+   `com.fasterxml.jackson.databind.JsonNode` thật (yêu cầu cứng của
+   `FormulaNodeExecutor`, S3-T2, không sửa) — nhưng Jackson generic
+   `Map<String,Object>` deserialize nó thành `LinkedHashMap`/scalar thường,
+   không phải `JsonNode`, làm vỡ `instanceof JsonNode` nếu không xử lý.
+   Converter tự "bọc lại" đúng 1 field này bằng `objectMapper.valueToTree(...)`
+   ngay sau khi đọc JSON, cho MỌI node `formula` trong graph — không sửa
+   `FormulaNodeExecutor` (ngoài scope, và nó cũng cần nhận Map thường từ
+   caller code Java thuần hiện có). Vấn đề này sẽ lặp lại giống vậy ở
+   `calculation_rule_set` của Price List (S3-T6) — ghi chú lại để task đó
+   tái dùng `DagNodeGraphConverter` thẳng, không viết lại.
+   `ObjectMapper` cấu hình `USE_BIG_DECIMAL_FOR_FLOATS=true` (giống
+   `DslRuleExecutor`) để config số (ví dụ `round` node's `nearest`)
+   deserialize ra `BigDecimal`, không `Double` (CLAUDE.md mục 7).
+4. **Anchor injection (tổng quát hoá hướng (a) của D-042)**: `measure-ref`
+   node tự mang `anchorInstanceId` trong `config` (do caller TOP-LEVEL bake
+   vào, đúng convention `query` đã có). `MeasureRefNodeExecutor` quét graph
+   con của measure, với MỌI node type `query` mà `config` KHÔNG có
+   `anchorInstanceId` (absent hoặc `null`) → tạo `DagNode` MỚI (bất biến,
+   không sửa record cũ) merge thêm `anchorInstanceId` đó vào config. Node
+   `query` đã có sẵn 1 anchor cụ thể baked-in từ trước (khác `null`) **không
+   bị ghi đè** — đúng đúng câu chữ task ("KHÔNG có... hoặc có giá trị
+   null/placeholder"); có test riêng xác nhận hành vi "không ghi đè" này
+   (`queryNodeWithAnchorAlreadyBakedInsideTheMeasureIsNotOverridden`).
+5. **Trace transclusion KHÔNG sửa `DagEngine`/`DagNodeExecutor` interface**
+   (đúng "KHÔNG làm" của task) — `DagEngine.execute()` tự xây `trace` riêng
+   từ giá trị trả về duy nhất của `executor.execute()`, không có hook nào
+   để 1 executor "chèn thêm" entry vào trace đó. Giải pháp: `MeasureRefNodeExecutor`
+   giữ 1 `ThreadLocal<Map<String, List<TraceEntry>>>` (key = id của chính
+   node `measure-ref` gọi nó — phân biệt được nhiều điểm gọi cùng 1 measure
+   trong cùng 1 graph), ghi vào đó TraceEntry của graph con (nguyên vẹn,
+   chỉ đổi `nodeId` thành `"<measureRefNodeId>:<measureCode>:<innerNodeId>"`
+   — chọn tiền tố này, không chỉ `"<measureCode>:"` như 1 trong 2 gợi ý của
+   task, để tránh đụng id nếu cùng 1 measure được gọi ≥2 lần trong 1 graph).
+   `MeasureAwareDagEngine` (mới, `app/.../pricing/dag`, `@Component`) là
+   lớp DUY NHẤT biết tới cơ chế này: reset buffer → chạy `DagEngine` bình
+   thường (registry `withQueryAndMeasure()`) → drain buffer → chèn (splice)
+   từng list vào đúng vị trí ngay sau `TraceEntry` của node `measure-ref`
+   tương ứng trong trace top-level. Đây là nơi DUY NHẤT caller cần gọi
+   (`measureAwareDagEngine.execute(nodes)`), không gọi `new DagEngine(...)`
+   trực tiếp khi graph có khả năng chứa `measure-ref`.
+   **NEEDS-PO-REVIEW nhẹ**: `ThreadLocal` là state ẩn trong 1 Spring
+   singleton bean — hơi lệch tinh thần "executor phải là pure function,
+   không state ẩn" ghi trong Javadoc `DagNodeExecutor`; chấp nhận vì (a)
+   không ảnh hưởng giá trị tính ra (chỉ ảnh hưởng dữ liệu audit/trace phụ),
+   (b) được reset/drain tường minh bởi đúng 1 caller
+   (`MeasureAwareDagEngine`) ngay trước/sau mỗi lần chạy top-level trên
+   cùng thread, không rò rỉ giữa 2 lần gọi (có test
+   `interleavedCallsToDifferentAnchorsNeverBleedIntoEachOther` xác nhận).
+   Nếu sau này cần chạy đa luồng/async trong 1 request tính giá, cách này
+   cần xem lại.
+6. **Không có `measure-ref` trong registry graph CON** (`MeasureRefNodeExecutor.subgraphRegistry()`
+   tự dựng `standard() + query`, không dùng lại `AppDagNodeExecutors.withQuery()`)
+   — tránh dependency cycle Spring (`AppDagNodeExecutors` cần
+   `MeasureRefNodeExecutor` để có `withQueryAndMeasure()`; nếu
+   `MeasureRefNodeExecutor` lại cần `AppDagNodeExecutors` để dựng registry
+   con thì thành vòng tròn constructor). Chấp nhận lặp 2 dòng glue code đổi
+   lại không vòng tròn bean — nested measure-ref đã bị chặn tường minh ở
+   bước khác (`requireNoNestedMeasureRef`) nên registry con không cần
+   `measure-ref` entry nữa dù sao.
+7. **Test minh hoạ dùng "Gadget" (không automotive)**, graph con =
+   `query -> formula -> round` (KHÔNG dùng literal `weighted-average`) —
+   `WeightedAverageNodeExecutor` (S3-T2) cần 1 input là
+   `List<Map<String,Object>>` nhiều dòng, nhưng `query` thật (S3-T3) luôn
+   resolve về 1 scalar (filter→sort→take-first), chưa có node "query trả
+   list nhiều dòng" nào ở DAG hiện tại — gap biết trước, ngoài scope S3-T5
+   (ADR-009 mục 2: thêm node phức tạp hơn "khi cần thật", không làm trước).
+   Tên measure test vẫn đặt `weightedCost_<suffix>` theo đúng tinh thần ví
+   dụ task gợi ý, nhưng dùng node thật có sẵn để test đi qua DB thật (không
+   giả lập), đúng mục tiêu task là test hành vi inject-anchor/transclude
+   qua `QueryNodeExecutor` thật.
+Lý do: Theo đúng chỉ dẫn task S3-T5 (ADR-009 mục 2, D-039/D-042, backlog
+E8-04, sprint-3.md S3-T5) — các lựa chọn trên là các điểm "tự quyết hợp lý,
+ghi lý do" theo CLAUDE.md mục 6 (ADR-009 không chi tiết tới mức nói rõ cách
+giải quyết jsonb binding, cách transclude trace khi không được sửa
+`DagEngine`, tiền tố nodeId, tránh dependency cycle).
+Hệ quả:
+- `app/src/main/resources/db/migration/V11__measure_definition.sql` (mới):
+  `measure_definition`.
+- `core-pricing/src/main/java/com/cpq/core/pricing/persistence/` (mới):
+  `DagNodeGraphConverter`, `MeasureDefinitionEntity`.
+- `core-pricing/build.gradle.kts`: thêm `compileOnly("org.hibernate.orm:hibernate-core")`.
+- `app/src/main/java/com/cpq/app/pricing/`: `MeasureDefinitionRepository`
+  (mới); `dag/MeasureRefNodeExecutor`, `dag/MeasureAwareDagEngine` (mới);
+  `dag/AppDagNodeExecutors` thêm `withQueryAndMeasure()`.
+- Test: `core-pricing` — `DagNodeGraphConverterTest` (unit, round-trip JSON
+  gồm case `formula`/`round`/null). `app` — `MeasureRefNodeExecutorIT`
+  (Testcontainers, 8 test, entity giả định "Gadget"): 2 graph top-level
+  khác nhau tham chiếu 1 measure với 2 anchor khác nhau ra đúng giá trị +
+  trace transcluded đầy đủ; determinism (chạy lại cùng graph → cùng
+  kết quả + cùng trace); interleave 2 anchor liên tiếp không lẫn; anchor đã
+  baked sẵn trong measure không bị ghi đè; nested measure-ref throw rõ
+  "not supported yet"; measureCode không tồn tại / thiếu anchorInstanceId /
+  `result_node_id` sai throw rõ.
+- Chưa làm: Price List module (S3-T6, dùng lại Measure ở đây).
+- Domain vs engine: không đụng `core-pricing/dag` (DagEngine/4 executor
+  chuẩn)/`QueryNodeExecutor`/`CalculationBinding*` hiện có; test dùng entity
+  giả định "Gadget", không từ khoá automotive nào trong code lõi.
+Verify: `./gradlew :core-pricing:test` — 4 test mới (`DagNodeGraphConverterTest`)
+pass; `./gradlew :app:test --tests "com.cpq.app.pricing.dag.MeasureRefNodeExecutorIT"`
+— 8 passed/0 failed. Sabotage-and-revert check (tạm tắt
+`injectAnchorIntoQueryNodesMissingOne`, trả thẳng graph gốc không inject) →
+3/8 test fail đúng như kỳ vọng (`twoTopLevelGraphs...`,
+`interleavedCallsToDifferentAnchorsNeverBleedIntoEachOther`, và 1 test
+khác phụ thuộc anchor) — xác nhận test không vacuous; đã revert lại nguyên
+bản, diff rỗng. `./gradlew build` (toàn repo): BUILD SUCCESSFUL, 125 test
+`app` pass/0 fail (tổng từ toàn bộ test-results XML), không regress
+Sprint 1/2/S3-T1..T4/perf fix.
