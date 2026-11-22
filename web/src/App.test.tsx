@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
 // react-oidc-context's real AuthProvider talks to a real Keycloak
@@ -30,40 +30,62 @@ function renderApp(ui: ReactElement = <App />) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
 
+function authenticatedAs(role: string) {
+  const payload = btoa(JSON.stringify({ realm_access: { roles: [role] } }))
+  useAuthMock.mockReturnValue({
+    isLoading: false,
+    isAuthenticated: true,
+    user: { access_token: `header.${payload}.signature`, profile: { name: 'Alex' } },
+    removeUser: vi.fn(),
+  })
+}
+
 describe('App', () => {
-  it('shows a loading indicator while the auth state is resolving', () => {
-    useAuthMock.mockReturnValue({ isLoading: true, isAuthenticated: false, error: undefined })
+  beforeEach(() => window.history.replaceState(null, '', '/'))
 
+  it('shows a loading indicator while restoring the session', () => {
+    useAuthMock.mockReturnValue({ isLoading: true, isAuthenticated: false })
     renderApp()
-
-    expect(screen.getByLabelText(/loading authentication state/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Loading authentication state')).toBeInTheDocument()
   })
 
-  it('shows a login button when the user is not authenticated', () => {
-    useAuthMock.mockReturnValue({
-      isLoading: false,
-      isAuthenticated: false,
-      error: undefined,
-      signinRedirect: vi.fn(),
-    })
-
+  it('restores the split login and calls the existing Keycloak redirect', () => {
+    const signinRedirect = vi.fn()
+    useAuthMock.mockReturnValue({ isLoading: false, isAuthenticated: false, signinRedirect })
     renderApp()
-
-    expect(screen.getByRole('button', { name: /login with keycloak/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to CPQ' })).toBeInTheDocument()
+    expect(screen.getByText('Sample pricing breakdown')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(signinRedirect).toHaveBeenCalledOnce()
   })
 
-  it('shows the vehicle/part selection screen (not the login button) once authenticated', () => {
-    useAuthMock.mockReturnValue({
-      isLoading: false,
-      isAuthenticated: true,
-      error: undefined,
-      user: { access_token: 'fake-access-token' },
-      removeUser: vi.fn(),
-    })
-
+  it('lands Sales on home and opens the existing configurator from New quote', async () => {
+    authenticatedAs('sales')
     renderApp()
+    expect(screen.getByRole('heading', { name: 'Quotes' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'New quote' }))
+    expect(await screen.findByRole('heading', { name: 'Chọn xe / Chọn part' })).toBeInTheDocument()
+  })
 
-    expect(screen.getByRole('heading', { name: /chọn xe \/ chọn part/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /login with keycloak/i })).not.toBeInTheDocument()
+  it('opens Products through Master Data with a single page heading and column controls', async () => {
+    authenticatedAs('sales')
+    renderApp()
+    expect(within(screen.getByRole('navigation', { name: 'Workspace' })).queryByText('Products')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Master Data' }))
+    const item = await screen.findByRole('menuitem', { name: 'Products' })
+    fireEvent.click(within(item).getByRole('link'))
+    expect(await screen.findByText('25 records')).toBeInTheDocument()
+    expect(screen.getAllByText('Products', { selector: 'h1,h2' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Columns' })).toBeInTheDocument()
+  })
+
+  it('uses the manager home and denies access for accounts without a CPQ role', () => {
+    authenticatedAs('sales_manager')
+    const view = renderApp()
+    expect(screen.getByRole('heading', { name: 'Pending approvals' })).toBeInTheDocument()
+    view.unmount()
+    authenticatedAs('unknown')
+    renderApp()
+    expect(screen.getByText('Workspace access required')).toBeInTheDocument()
   })
 })

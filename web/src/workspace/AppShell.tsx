@@ -6,6 +6,7 @@ import {
   DownOutlined,
   HomeOutlined,
   MenuFoldOutlined,
+  MenuUnfoldOutlined,
   MenuOutlined,
   PlusCircleOutlined,
   SearchOutlined,
@@ -57,7 +58,7 @@ export function AppShell({
   const [modal, setModal] = useState<"search" | "profile" | null>(null);
   const [query, setQuery] = useState("");
   const { lg: desktop } = Grid.useBreakpoint();
-  const hasCatalog = pages.includes("catalog");
+  const hasCatalog = pages.includes("configurator");
   const masterDataPages = pages.filter(
     (key) => key === "products" || key === "definitions"
   );
@@ -149,16 +150,6 @@ export function AppShell({
         </a>
 
         <Layout.Header className="workspace-topbar">
-          <Button
-            className="workspace-sider-toggle"
-            variant="quiet"
-            icon={sidebarCollapsed ? <MenuOutlined /> : <MenuFoldOutlined />}
-            aria-label={sidebarAction}
-            title={sidebarAction}
-            aria-controls="workspace-sidebar"
-            aria-expanded={!sidebarCollapsed}
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-          />
           <a
             className="brand workspace-logo"
             href="#home"
@@ -204,6 +195,15 @@ export function AppShell({
             icon={<MenuOutlined />}
             aria-label="Menu"
             onClick={() => setMenuOpen(true)}
+          />
+          <Button
+            className="workspace-sider-toggle"
+            variant="quiet"
+            icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            aria-label={sidebarAction}
+            aria-controls="workspace-sidebar"
+            aria-expanded={!sidebarCollapsed}
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
           />
           <div className="workspace-tools">
             <Button
@@ -261,7 +261,7 @@ export function AppShell({
                   items: [
                     {
                       key: "configure",
-                      label: <a href="#catalog">Configure a product</a>,
+                      label: <a href="#configurator">Configure a product</a>,
                     },
                     ...(pages.includes("definitions")
                       ? [

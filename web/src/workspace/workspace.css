@@ -1,290 +1,359 @@
-/*
- * Workspace shell (AppShell/HomeScreen) styling. Previously these
- * component class names had no CSS at all (unstyled divs/anchors) — this
- * file applies web/design.md's tokens (via web/src/ui/styles.css custom
- * properties) to the navbar/sidebar/home surfaces (D-050).
- */
-
 .workspace {
-  /* height (not min-height): establishes a real, bounded height chain down
-     to .workspace-content so DataPage's "fit" mode (web/src/ui/styles.css)
-     has a real 100% to fill instead of collapsing to 0 — .workspace-content
-     below carries its own overflow so ordinary (non-"fit") pages still
-     scroll exactly as before. */
-  height: 100vh;
-  background: var(--canvas);
+  --topbar-height: 39px;
+  height: 100dvh;
+  color: var(--workspace-ink);
+  font-size: 12px;
 }
 
-.workspace-topbar {
+.workspace-topbar.ant-layout-header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
   display: flex;
   align-items: center;
+  flex: 0 0 var(--topbar-height);
   gap: 8px;
-  height: 56px;
-  padding: 0 16px;
-  background: var(--canvas);
-  border-bottom: 1px solid var(--workspace-divider);
+  height: var(--topbar-height);
+  padding-inline: 16px;
+  color: #f5fbfb;
+  background: #283e43;
   line-height: normal;
 }
 
-.workspace-sider-toggle {
-  margin-right: 4px;
+.workspace-topbar .ant-btn {
+  color: #f5fbfb;
 }
 
-.brand.workspace-logo {
+.workspace .workspace-topbar .ant-btn:not(:disabled, .ant-btn-disabled):is(:hover, :focus-visible, :active, [aria-expanded='true'], .ant-dropdown-open) {
+  color: #fff;
+  background: #a8dad226;
+}
+
+.workspace-topbar .ant-btn:focus-visible {
+  outline-color: #a8dad2;
+}
+
+.workspace-logo {
   display: inline-flex;
-  align-items: center;
-  margin-right: 4px;
+  flex: none;
+  padding: 4px 8px;
 }
 
-.brand-mark {
-  display: inline-block;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--ink);
+.workspace-logo .brand-mark {
+  width: 17px;
+  height: 17px;
+  border-color: #a8dad2;
 }
 
-.workspace-picker-label {
-  margin: 0 2px 0 6px;
+.workspace-picker.ant-btn {
+  flex-shrink: 0;
+  gap: 6px;
+  padding-inline: 7px;
   font-weight: 650;
-  color: var(--ink);
 }
 
-.workspace-picker-arrow {
+.workspace-picker .ant-avatar,
+.workspace-account .ant-avatar {
+  color: #225b55;
+  background: #cfe8e3;
+}
+
+.workspace-picker-arrow,
+.workspace-master-arrow {
+  color: #d5e6e6;
   font-size: 10px;
-  color: var(--slate);
 }
 
-.workspace-menu-trigger {
+.workspace-menu-trigger.ant-btn {
   display: none;
 }
 
 .workspace-tools {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.workspace-search {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  color: var(--slate);
+  min-width: 0;
+  margin-inline-start: auto;
 }
 
-.workspace-search-label {
-  color: var(--slate);
+.workspace-search.ant-btn {
+  position: absolute;
+  left: 50%;
+  justify-content: flex-start;
+  width: min(34vw, 340px);
+  padding-inline: 12px;
+  transform: translateX(-50%);
+  border-radius: 7px;
+  background: #ffffff16;
 }
 
 .workspace-search kbd {
-  padding: 1px 6px;
-  border: 1px solid var(--bone);
-  border-radius: 6px;
-  background: var(--mist);
-  color: var(--ash);
+  margin-inline-start: auto;
+  color: #d5e6e6;
+  font-family: ui-monospace, monospace;
   font-size: 11px;
 }
 
-.workspace-master-label,
-.workspace-master-arrow {
-  color: var(--slate);
+.workspace-account.ant-btn {
+  padding-inline: 4px;
+}
+
+.workspace-master-navigation {
+  flex: none;
 }
 
 .workspace-frame {
-  background: var(--canvas);
+  min-height: 0;
 }
 
-.workspace-sider {
-  background: var(--canvas) !important;
+.workspace-sider.ant-layout-sider {
+  overflow: auto;
   border-right: 1px solid var(--workspace-divider);
+  background: var(--workspace-sidebar);
+}
+
+.workspace-navigation,
+.workspace-navigation-group {
+  display: grid;
+  gap: 2px;
 }
 
 .workspace-navigation {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 16px 12px;
+  padding: 10px;
 }
 
 .workspace-navigation a {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius-pill);
-  color: var(--slate);
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
+  padding: 6px 9px;
+  border-radius: 6px;
+  color: var(--workspace-muted);
 }
 
 .workspace-navigation a:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--ink);
+  background: #e9eeee;
 }
 
 .workspace-navigation a[aria-current='page'] {
+  color: var(--workspace-accent);
   background: var(--workspace-selected);
-  color: var(--blue);
+  font-weight: 650;
 }
 
 .workspace-navigation-group {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--workspace-divider);
 }
 
 .workspace-navigation-label {
-  padding: 0 12px 6px;
-  color: var(--ash);
+  padding: 4px 9px;
+  color: var(--workspace-muted);
   font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: 650;
+}
+
+.workspace-sider.ant-layout-sider-collapsed .workspace-navigation a {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.workspace-toolbar-menu.ant-dropdown-menu .ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled):hover {
+  color: var(--workspace-accent);
+  background: var(--workspace-selected);
 }
 
 .workspace-body {
-  background: var(--canvas) !important;
-  padding: 24px 28px;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
 }
 
 .workspace-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.workspace-title-icon {
-  display: inline-flex;
-  color: var(--blue);
+  flex: none;
+  gap: 8px;
+  min-height: 39px;
+  padding-inline: clamp(10px, 1.55vw, 19px);
+  border-bottom: 1px solid var(--workspace-divider);
 }
 
 .workspace-title h1 {
   margin: 0;
-  font: 700 26px/1.2 var(--font-display);
-  letter-spacing: -0.02em;
-  color: var(--ink);
+  font: 750 14px/1.4 var(--font-display);
+}
+
+.workspace-title-icon {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 6px;
+  color: #4c32c1;
+  background: var(--violet-tint);
 }
 
 .workspace-title-action {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .workspace-content {
-  outline: none;
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  padding: clamp(10px, 1.55vw, 19px);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
-.workspace-search-input {
-  margin-bottom: 12px;
+.workspace a:focus-visible {
+  outline: 2px solid var(--workspace-accent);
+  outline-offset: 2px;
 }
 
 .workspace-search-results {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 4px;
+  margin-top: 12px;
 }
 
 .workspace-search-results a {
   padding: 8px 10px;
-  border-radius: var(--radius-input);
-  color: var(--ink);
-  text-decoration: none;
+  border-radius: 6px;
+  color: var(--workspace-ink);
 }
 
 .workspace-search-results a:hover {
-  background: var(--mist);
+  background: var(--workspace-selected);
 }
 
-/* Home screen */
-
 .workspace-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  display: grid;
+  gap: 13px;
 }
 
 .home-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
 }
 
 .home-action-card {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 20px;
-  background: var(--mist);
-  border: 1px solid var(--bone);
-  border-radius: var(--radius-card);
-  color: var(--ink);
-  text-decoration: none;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--workspace-divider);
+  border-radius: 8px;
+  color: var(--workspace-ink);
 }
 
 a.home-action-card:hover {
-  border-color: var(--blue);
+  border-color: var(--workspace-accent);
+  color: var(--workspace-ink);
+  background: #f7fbfa;
 }
 
-.home-action-card > span:last-child {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.home-action-card strong,
+.home-action-card span > span {
+  display: block;
 }
 
-.home-action-card strong {
-  font-family: var(--font-display);
-  font-weight: 650;
-}
-
-.home-action-card > span:last-child > span:last-child {
-  color: var(--slate);
-  font-size: 13px;
+.home-action-card span > span {
+  margin-top: 3px;
+  color: var(--workspace-muted);
 }
 
 .home-card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--blue-tint);
-  color: var(--blue);
-  flex: none;
+  display: grid;
+  flex: 0 0 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--workspace-accent);
+  background: #d4eee7;
+  font-size: 16px;
 }
 
 .home-card-icon.secondary {
+  color: #4c32c1;
   background: var(--violet-tint);
-  color: var(--violet);
 }
 
-.home-lead {
-  border-radius: var(--radius-card);
+.home-card-icon > .anticon {
+  margin: 0;
+  color: inherit;
 }
 
 .home-lead h2 {
   margin: 0;
-  font-size: 18px;
+  font: 750 14px/1.4 var(--font-display);
+}
+
+@media (max-width: 1180px) {
+  .workspace-search.ant-btn {
+    position: static;
+    width: min(34vw, 260px);
+    min-width: 28px;
+    transform: none;
+  }
 }
 
 @media (max-width: 991px) {
-  .workspace-sider-toggle {
+  .workspace-sider.ant-layout-sider,
+  .workspace-sider-toggle.ant-btn {
     display: none;
   }
 
-  .workspace-menu-trigger {
+  .workspace-menu-trigger.ant-btn {
     display: inline-flex;
   }
+}
 
-  .workspace-picker-label,
-  .workspace-search-label,
-  kbd {
+@media (max-width: 850px) {
+  .workspace-search kbd {
     display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace .workspace-topbar :is(.workspace-search, .workspace-master-trigger).ant-btn {
+    justify-content: center;
+    gap: 0;
+    width: 28px;
+    min-width: 28px;
+    padding-inline: 0;
+  }
+
+  .workspace-search-label,
+  .workspace-master-label,
+  .workspace-master-arrow {
+    display: none;
+  }
+
+  .home-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 430px) {
+  .workspace-topbar.ant-layout-header {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .workspace-picker-label {
+    display: none;
+  }
+
+  .workspace-tools {
+    gap: 4px;
+  }
+
+  .workspace .workspace-topbar .workspace-quick-action.ant-btn {
+    padding-inline: 8px;
   }
 }

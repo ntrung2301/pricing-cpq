@@ -1,88 +1,68 @@
-import { Alert, Spin } from 'antd'
+import { Result, Spin } from 'antd'
+import { useSyncExternalStore } from 'react'
 import { useAuth } from 'react-oidc-context'
-import { useEffect, useState } from 'react'
 import { UIProvider } from './ui'
 import { LoginScreen } from './auth/LoginScreen'
 import { getWorkspaceRole } from './auth/workspaceRole'
 import { AppShell, type WorkspacePage } from './workspace/AppShell'
 import { HomeScreen } from './workspace/HomeScreen'
+import { homeContent } from './workspace/homeContent'
 import { EntitiesList } from './entities/EntitiesList'
 import { VehiclePartSelectionScreen } from './configurator/VehiclePartSelectionScreen'
 import { ProductsPage } from './products/ProductsPage'
 
-const pages: WorkspacePage[] = ['home', 'products', 'configurator', 'definitions']
-const pageTitles: Record<WorkspacePage, string> = {
-  home: 'Home',
-  products: 'Products',
-  catalog: 'Catalog',
-  configurator: 'Chọn xe / Chọn part',
-  definitions: 'Catalog definitions',
+function subscribe(onChange: () => void) {
+  window.addEventListener('hashchange', onChange)
+  return () => window.removeEventListener('hashchange', onChange)
 }
 
-/**
- * Simple hash-based routing (no react-router, per D-050 — "đừng
- * over-engineer"), same pattern AppShell's nav links already use
- * (`href="#configurator"` etc). Defaults to the `configurator` page so the
- * authenticated landing screen matches the pre-migration behavior (S2-T9
- * Playwright specs expect "Chọn xe / Chọn part" immediately after login).
- */
-function useHashPage(): WorkspacePage {
-  const [page, setPage] = useState<WorkspacePage>(() => {
-    const hash = window.location.hash.replace('#', '') as WorkspacePage
-    return pages.includes(hash) ? hash : 'configurator'
-  })
-
-  useEffect(() => {
-    function onHashChange() {
-      const hash = window.location.hash.replace('#', '') as WorkspacePage
-      setPage(pages.includes(hash) ? hash : 'configurator')
-    }
-    window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
-  }, [])
-
-  return page
-}
-
-function App() {
+function Workspace() {
   const auth = useAuth()
-  const page = useHashPage()
+  const hash = useSyncExternalStore(subscribe, () => window.location.hash)
+
+  if (auth.isLoading && !auth.activeNavigator) {
+    return <main className="session-loading" role="status" aria-label="Loading authentication state"><Spin size="large" /></main>
+  }
+  if (!auth.isAuthenticated || !auth.user) return <LoginScreen />
+
+  const role = getWorkspaceRole(auth.user.access_token)
+  const pages: WorkspacePage[] = ['home']
+  if (role) pages.push('products', 'configurator')
+  if (role === 'pricing_admin') pages.push('definitions')
+  const requested = hash.slice(1) === 'catalog' ? 'configurator' : hash.slice(1)
+  const page = pages.find((candidate) => candidate === requested) ?? 'home'
+  const home = role && homeContent[role]
+  const titles = {
+    home: home ? home.title : 'Workspace',
+    products: undefined,
+    catalog: 'Catalog',
+    configurator: 'Chọn xe / Chọn part',
+    definitions: undefined,
+  }
 
   return (
-    <UIProvider>
-      {auth.isLoading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
-          <Spin aria-label="Loading authentication state" />
-        </div>
-      )}
-
-      {!auth.isLoading && auth.error && (
-        <div style={{ padding: 24 }}>
-          <Alert type="error" message={auth.error.message} />
-        </div>
-      )}
-
-      {!auth.isLoading && !auth.error && !auth.isAuthenticated && <LoginScreen />}
-
-      {!auth.isLoading && !auth.error && auth.isAuthenticated && auth.user && (
-        <AppShell
-          page={page}
-          pages={pages}
-          title={pageTitles[page]}
-          accountName={auth.user.profile?.email ?? auth.user.profile?.preferred_username ?? 'User'}
-          roleLabel={getWorkspaceRole(auth.user.access_token)}
-          onSignOut={() => auth.removeUser()}
-        >
-          {page === 'home' && <HomeScreen role={getWorkspaceRole(auth.user.access_token) ?? 'sales'} />}
-          {page === 'products' && <ProductsPage />}
-          {page === 'definitions' && <EntitiesList accessToken={auth.user.access_token} />}
-          {page === 'configurator' && (
-            <VehiclePartSelectionScreen accessToken={auth.user.access_token} />
-          )}
-        </AppShell>
-      )}
-    </UIProvider>
+    <AppShell
+      page={page}
+      pages={pages}
+      title={titles[page]}
+      primaryAction={page === 'home' && home ? { label: home.action, href: home.href } : undefined}
+      accountName={auth.user.profile?.name ?? auth.user.profile?.preferred_username ?? 'Account'}
+      roleLabel={role && { sales: 'Sales', sales_manager: 'Sales Manager', pricing_admin: 'Pricing Admin' }[role]}
+      onSignOut={() => {
+        window.location.hash = 'home'
+        void auth.removeUser()
+      }}
+    >
+      {!role && <Result status="403" title="Workspace access required"
+        subTitle="Ask your organization administrator to assign a CPQ role to your account." />}
+      {role && page === 'home' && <HomeScreen role={role} />}
+      {page === 'products' && <ProductsPage />}
+      {page === 'definitions' && <EntitiesList accessToken={auth.user.access_token} />}
+      {page === 'configurator' && <VehiclePartSelectionScreen accessToken={auth.user.access_token} />}
+    </AppShell>
   )
 }
 
-export default App
+export default function App() {
+  return <UIProvider><Workspace /></UIProvider>
+}

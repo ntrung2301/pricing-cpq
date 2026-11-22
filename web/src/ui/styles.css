@@ -45,14 +45,13 @@
   /* Shadows — web/design.md "Shadows" (subtle, flat-first elevation) */
   --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
 
-  /* Workspace shell — remapped onto the tokens above (D-050), replacing
-     the earlier placeholder teal theme. */
-  --workspace-ink: var(--ink);
-  --workspace-muted: var(--slate);
-  --workspace-divider: var(--bone);
-  --workspace-sidebar: var(--mist);
-  --workspace-accent: var(--blue);
-  --workspace-selected: var(--blue-tint);
+  /* Compact teal workspace theme restored from the approved product layout. */
+  --workspace-ink: #263739;
+  --workspace-muted: #516365;
+  --workspace-divider: #e3e9e9;
+  --workspace-sidebar: #f3f6f7;
+  --workspace-accent: #27776f;
+  --workspace-selected: #dcefeb;
 
   /* Legacy alias kept so any remaining reference resolves to the new pill token. */
   --pill-radius: var(--radius-pill);
@@ -198,7 +197,7 @@ h1, h2, h3, h4 {
 .ui-data-grid {
   min-width: 0;
   border: 1px solid var(--bone);
-  border-radius: var(--radius-card);
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -236,7 +235,7 @@ h1, h2, h3, h4 {
   min-height: 0;
 }
 
-.ui-data-page-header h1 {
+.ui-data-page-header :is(h1, h2) {
   margin: 0;
   color: var(--workspace-ink);
   font: 700 22px/1.2 var(--font-display);

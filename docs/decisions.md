@@ -3199,3 +3199,39 @@ Configurator (cuộn dài, danh sách part) đều hiển thị và cuộn đún
 
 Hệ quả: không đụng business logic nào — thuần CSS layout + 2 route mới
 được wire.
+
+## D-053 — Checkpoint: PO tự redesign theme (teal), viết lại Login + App.tsx role-based — commit nguyên trạng, chốt làm theme chuẩn (2026-11-22, orchestrator)
+
+**Bối cảnh**: PO trực tiếp chỉnh sửa 11 file UI (`App.tsx`, `index.css`,
+`workspace.css`, `LoginScreen.tsx`, `UIProvider.tsx`, `ui/styles.css`,
+`AppShell.tsx`, `main.tsx`, `App.test.tsx`, 2 E2E spec) ở 1 phiên khác,
+song song với việc tôi vừa wire Home/Products + vá bug layout (D-052) —
+phát hiện qua working-tree diff (11 file, +504/-320 dòng), không phải báo
+cáo bằng lời. PO xác nhận: "giữ nguyên style thế này cho nguyên app" — đổi
+hẳn theme từ token `design.md` (ClickUp-style, D-051) sang bảng màu
+**teal** (`#283e43` topbar, `#a8dad2` accent, `#225b55`/`#4c32c1` icon
+tint) + Login 2 cột kiểu marketing page mới + `App.tsx` viết lại theo
+role (`pages` tính động theo `getWorkspaceRole`, thêm fallback
+`Result status="403"` cho user chưa có role CPQ nào, trang mặc định đổi
+từ `configurator` sang `home`).
+
+**Quyết định**: Verify toàn bộ rồi commit nguyên trạng (không sửa lại theo
+`design.md` cũ) — token teal này giờ là chuẩn chính thức, thay thế hẳn
+token ClickUp-style của D-051. Việc tiếp theo (trang Price Lists mới,
+theo yêu cầu PO) phải dùng đúng bảng màu/token này, không quay lại
+`design.md`.
+
+**Verify trước khi commit**: `npx tsc -b` sạch. `npx vitest run` → 43/43
+pass (2 test mới trong `App.test.tsx` cho logic role-based). `npm run
+build` → sạch. `npx playwright test` → 4/4 pass, 2 lần liên tiếp (tên test
+`walking-skeleton.spec.ts` đổi thành "land on the Pricing Admin home" —
+khớp đúng hành vi mới "trang mặc định = home").
+
+Hệ quả: `docs/sprints/sprint-3.md`/backlog không đổi (việc này ngoài phạm
+vi sprint, giống D-051/D-052). Trang Price Lists (yêu cầu kế tiếp của PO)
+sẽ dùng token/class đặt tên theo file `workspace.css` hiện tại
+(`--workspace-ink`/`--workspace-accent`/`--workspace-sidebar`/
+`--workspace-divider`/`--workspace-selected`/`--violet-tint`...), không
+dùng lại biến cũ (`--ink`/`--canvas`/`--blue` từ D-051) nếu 2 bộ biến này
+khác nhau — cần đọc `ui/styles.css` hiện tại để xác nhận tên biến chính
+xác trước khi code.

@@ -5,21 +5,14 @@ import { expect, test } from '@playwright/test'
 // stack end to end — real Keycloak login form (Authorization Code +
 // PKCE, client `cpq-web`). Nothing in this test is mocked.
 //
-// Updated for S2-T9 (docs/decisions.md): the authenticated home screen
-// is now `VehiclePartSelectionScreen` (real `GET
-// /api/catalog/{entityDefCode}/instances` data, D-030) — it replaced the
-// original S1-T8 "Entity definitions" screen (`GET /api/entities`
-// metadata listing), which is no longer mounted in `App.tsx`. This test
-// now only proves the login flow itself still works end to end; the
-// deeper "real catalog/fitment data on screen" proof now lives in
-// e2e/tests/vehicle-part-selection.spec.ts.
-test('login via Keycloak and land on the authenticated vehicle/part selection screen', async ({
+// After sign-in, Pricing Admin opens the restored role-aware home.
+test('login via Keycloak and land on the Pricing Admin home', async ({
   page,
 }) => {
   await page.goto('/')
 
   // Unauthenticated state: real app redirects to the real Keycloak login page.
-  const loginButton = page.getByRole('button', { name: /login with keycloak/i })
+  const loginButton = page.getByRole('button', { name: 'Sign in' })
   await expect(loginButton).toBeVisible({ timeout: 15_000 })
   await loginButton.click()
 
@@ -31,7 +24,7 @@ test('login via Keycloak and land on the authenticated vehicle/part selection sc
 
   // Redirected back to the real app, now authenticated.
   await page.waitForURL(/localhost:5173\/?/, { timeout: 15_000 })
-  await expect(page.getByRole('heading', { name: /chọn xe \/ chọn part/i })).toBeVisible({
+  await expect(page.getByRole('heading', { name: /pricing administration/i })).toBeVisible({
     timeout: 15_000,
   })
 })

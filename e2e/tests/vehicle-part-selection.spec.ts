@@ -28,7 +28,7 @@ test('login, choose a real seeded Vehicle, find compatible Products, pick a Cust
 }) => {
   await page.goto('/')
 
-  const loginButton = page.getByRole('button', { name: /login with keycloak/i })
+  const loginButton = page.getByRole('button', { name: 'Sign in' })
   await expect(loginButton).toBeVisible({ timeout: 15_000 })
   await loginButton.click()
 
@@ -38,6 +38,8 @@ test('login, choose a real seeded Vehicle, find compatible Products, pick a Cust
   await page.locator('#kc-login').click()
 
   await page.waitForURL(/localhost:5173\/?/, { timeout: 15_000 })
+  await page.getByRole('link', { name: 'View catalog definitions' }).waitFor()
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: 'Configurator' }).click()
   await expect(page.getByRole('heading', { name: /chọn xe \/ chọn part/i })).toBeVisible({
     timeout: 15_000,
   })
