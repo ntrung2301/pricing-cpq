@@ -444,4 +444,21 @@ class PriceListServiceImplIT extends AbstractIntegrationTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("404");
     }
+
+    @Test
+    void listPriceListsReturnsEveryPriceListNewestFirst() {
+        MultiSourceFixture fixture = createMultiSourceFixture();
+        PriceListDto first = createDraftPriceList(fixture, "PLV2_" + UUID.randomUUID());
+        PriceListDto second = createDraftPriceList(fixture, "PLV2_" + UUID.randomUUID());
+
+        List<PriceListDto> all = priceListService.listPriceLists();
+
+        List<Long> ids = all.stream().map(PriceListDto::id).toList();
+        assertThat(ids).contains(first.id(), second.id());
+        assertThat(ids.indexOf(second.id())).isLessThan(ids.indexOf(first.id()));
+
+        PriceListDto found = all.stream().filter(pl -> pl.id().equals(second.id())).findFirst().orElseThrow();
+        assertThat(found.code()).isEqualTo(second.code());
+        assertThat(found.status()).isEqualTo("DRAFT");
+    }
 }

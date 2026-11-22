@@ -1,5 +1,6 @@
 package com.cpq.core.api.pricelist;
 
+import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 /**
@@ -47,4 +48,14 @@ public interface PriceListService {
      */
     @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'PRICING_ADMIN')")
     PriceListDetailDto getPriceList(Long priceListId);
+
+    /**
+     * {@code GET /api/price-lists-v2} — list every Price List header
+     * (newest first), for a browse/list page. Same read-only RBAC as
+     * {@link #getPriceList}; does not need per-row item/graph detail, so
+     * returns the lighter {@link PriceListDto} rather than {@link
+     * PriceListDetailDto}.
+     */
+    @PreAuthorize("hasAnyRole('SALES', 'SALES_MANAGER', 'PRICING_ADMIN')")
+    List<PriceListDto> listPriceLists();
 }

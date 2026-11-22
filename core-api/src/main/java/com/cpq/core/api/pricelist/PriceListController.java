@@ -1,5 +1,6 @@
 package com.cpq.core.api.pricelist;
 
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,11 @@ public class PriceListController {
     @PostMapping("/api/price-lists-v2")
     public PriceListDto createPriceList(@RequestBody CreatePriceListRequest request) {
         return priceListService.createPriceList(request);
+    }
+
+    @GetMapping("/api/price-lists-v2")
+    public List<PriceListDto> listPriceLists() {
+        return priceListService.listPriceLists();
     }
 
     @PostMapping("/api/price-lists-v2/{id}/items")

@@ -29,6 +29,7 @@ export const homeContent = {
     lead: 'Catalog definitions',
     leadDescription: 'Browse entity definitions, schema versions, and attribute counts for the active catalog.',
     secondary: 'Price lists',
-    secondaryDescription: 'Price list management and audit history aren’t available in this workspace yet.',
+    secondaryDescription: 'Browse price lists built via Measure Canvas, including their full calculation trace.',
+    secondaryHref: '#price-lists',
   },
 } satisfies Record<WorkspaceRole, Record<string, string>>

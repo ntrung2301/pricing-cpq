@@ -317,4 +317,39 @@ class PriceListEndpointSecurityIT extends AbstractIntegrationTest {
                                                 .authorities(new KeycloakRealmRoleConverter())))
                 .andExpect(status().isNotFound());
     }
+
+    // --- GET /api/price-lists-v2 (list, docs/decisions.md D-054) ---
+    // Same read-only RBAC as GET /api/price-lists-v2/{id} above.
+
+    @Test
+    void listPriceListsUnauthenticatedIs401() throws Exception {
+        mockMvc.perform(get("/api/price-lists-v2")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void listPriceListsWrongRoleIs403() throws Exception {
+        mockMvc.perform(
+                        get("/api/price-lists-v2")
+                                .with(
+                                        jwt().jwt(
+                                                        builder ->
+                                                                builder.claim(
+                                                                        "realm_access", Map.of("roles", List.of("nobody"))))
+                                                .authorities(new KeycloakRealmRoleConverter())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listPriceListsSalesManagerIs200() throws Exception {
+        mockMvc.perform(
+                        get("/api/price-lists-v2")
+                                .with(
+                                        jwt().jwt(
+                                                        builder ->
+                                                                builder.claim(
+                                                                        "realm_access",
+                                                                        Map.of("roles", List.of("sales_manager"))))
+                                                .authorities(new KeycloakRealmRoleConverter())))
+                .andExpect(status().isOk());
+    }
 }

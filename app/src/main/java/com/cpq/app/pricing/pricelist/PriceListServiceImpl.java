@@ -182,6 +182,12 @@ public class PriceListServiceImpl implements PriceListService {
                 items.stream().map(PriceListServiceImpl::toDto).toList());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<PriceListDto> listPriceLists() {
+        return priceListV2Repository.findAllByOrderByIdDesc().stream().map(PriceListServiceImpl::toDto).toList();
+    }
+
     private PriceListV2Entity requirePriceList(Long id) {
         return priceListV2Repository
                 .findById(id)

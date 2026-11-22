@@ -3235,3 +3235,57 @@ sẽ dùng token/class đặt tên theo file `workspace.css` hiện tại
 dùng lại biến cũ (`--ink`/`--canvas`/`--blue` từ D-051) nếu 2 bộ biến này
 khác nhau — cần đọc `ui/styles.css` hiện tại để xác nhận tên biến chính
 xác trước khi code.
+
+## D-054 — Trang Price Lists mới (list + detail/trace, read-only) + GET /api/price-lists-v2 (list) (2026-11-22, orchestrator)
+
+**Bối cảnh**: PO hỏi "còn page để xem pricelist đâu" — xác nhận: chưa hề có
+trang nào duyệt/xem Price List trong app chính (`Home`'s card "Price lists"
+chỉ ghi "not available yet"; Measure Canvas, S3-T8, là công cụ xây graph
+kéo-thả, không phải trang duyệt danh sách; backend chỉ có `GET
+/api/price-lists-v2/{id}`, không có list-all). PO yêu cầu làm trang mới,
+đồng thời xác nhận theme teal (D-053) là chuẩn chính thức cho toàn app.
+
+**Quyết định**:
+1. **Backend**: thêm `GET /api/price-lists-v2` (list-all, newest first) —
+   `PriceListV2Repository.findAllByOrderByIdDesc()`,
+   `PriceListService.listPriceLists()` (RBAC giống `getPriceList`:
+   `SALES`/`SALES_MANAGER`/`PRICING_ADMIN`, không giới hạn
+   `PRICING_ADMIN` vì đây là thao tác đọc), trả về `List<PriceListDto>`
+   (tái dùng DTO có sẵn từ `getPriceList` — đã đúng shape cho 1 dòng
+   danh sách, không cần DTO mới). TDD: `listPriceListsReturnsEveryPriceListNewestFirst`
+   (`PriceListServiceImplIT`) + 3 test RBAC mới (`PriceListEndpointSecurityIT`).
+2. **Frontend**: `web/src/pricelists/PriceListsPage.tsx` (mới) — danh sách
+   (`DataTable` dùng chung, cột Code/Name/Currency/Status[`StatusPill`]/
+   Version/Submitted/Approved by) + click vào code mở `Drawer` chi tiết
+   (header + từng item với `resultPrice`/`manualOverridePrice` +
+   **Calculation Trace đầy đủ** mỗi bước — node/type/resolved inputs/
+   output, định dạng JSON cho giá trị object thay vì `[object Object]`).
+   Tái dùng nguyên `pricing-v2/priceListV2Api.ts`/`types.ts` (cùng client
+   thật Measure Canvas đã dùng, chỉ thêm hàm `listPriceLists` mới) — không
+   viết lại fetch logic. Trang này **chỉ đọc** (xem/audit) — tạo/submit/
+   approve vẫn qua Measure Canvas (S3-T8), không trùng lặp chức năng.
+3. Wire vào `AppShell` (`workspacePages` thêm key `price-lists`, xếp vào
+   `mainPages` — ngang hàng Configurator, không phải "Master Data" vì đây
+   là nghiệp vụ chính không phải dữ liệu tham chiếu) + `App.tsx` (tất cả 3
+   role đều thấy, khớp RBAC backend) + cập nhật `Home`'s card "Price lists"
+   (`pricing_admin`) từ text tĩnh "not available yet" thành link thật tới
+   `#price-lists` (nhánh `if ('secondaryHref' in content)` trong
+   `HomeScreen.tsx` — chỉ `pricing_admin` có href này, `sales`/
+   `sales_manager`'s secondary card giữ nguyên không đổi, nội dung của 2
+   role đó không liên quan price lists).
+
+**Phát hiện phụ lúc restart app để test thật**: app đang chạy (process cũ
+từ trước khi thêm endpoint) trả `405 Method Not Allowed` cho
+`GET /api/price-lists-v2` — không phải bug, chỉ do process cũ chưa có
+route mới; restart `bootRun` xác nhận đúng.
+
+**Verify**: `./gradlew build` + `:app:test --rerun` → xanh (backend,
+12/12 + 21/21 cho 2 lớp test Price List). `npx vitest run` (web) →
+46/46 pass (3 test mới `PriceListsPage.test.tsx`). `npm run build` sạch.
+`npx playwright test` → 4/4 pass, 2 lần liên tiếp. Verify bằng Chrome
+thật: đăng nhập Keycloak thật, nav sidebar hiện "Price Lists", danh sách
+hiện đúng dữ liệu thật (price list demo S3-T7 + các price list do E2E spec
+tạo), click vào 1 dòng APPROVED mở Drawer đúng — hiện đủ header + item +
+5 bước trace đầy đủ, kể cả bước `output` có giá trị object (đã sửa hiển
+thị JSON thay vì "[object Object]" sau khi phát hiện qua browser thật,
+không phải đoán).

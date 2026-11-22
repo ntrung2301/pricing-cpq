@@ -10,6 +10,7 @@ import {
   MenuOutlined,
   PlusCircleOutlined,
   SearchOutlined,
+  TagsOutlined,
 } from "@ant-design/icons";
 import { Avatar, Drawer, Dropdown, Grid, Layout, Modal } from "antd";
 import { Button, CompactUI, Empty, Input, StatusPill } from "../ui";
@@ -26,6 +27,7 @@ const workspacePages = {
   // standalone page, per frontend-dev.md's "tái dùng ... cho mọi màn".
   configurator: { label: "Configurator", Icon: CarOutlined },
   definitions: { label: "Catalog definitions", Icon: DatabaseOutlined },
+  "price-lists": { label: "Price Lists", Icon: TagsOutlined },
 } as const;
 
 export type WorkspacePage = keyof typeof workspacePages;
@@ -66,7 +68,11 @@ export function AppShell({
     (key) => key !== "products"
   );
   const mainPages = pages.filter(
-    (key) => key === "home" || key === "catalog" || key === "configurator"
+    (key) =>
+      key === "home" ||
+      key === "catalog" ||
+      key === "configurator" ||
+      key === "price-lists"
   );
   const sidebarAction = sidebarCollapsed
     ? "Expand sidebar"

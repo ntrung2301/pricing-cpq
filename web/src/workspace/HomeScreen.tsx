@@ -16,13 +16,23 @@ export function HomeScreen({ role }: { role: WorkspaceRole }) {
             <span>{content.description}</span>
           </span>
         </a>
-        <div className="home-action-card">
-          <span className="home-card-icon secondary"><ClockCircleOutlined aria-hidden="true" /></span>
-          <span>
-            <strong>{content.secondary}</strong>
-            <span>{content.secondaryDescription}</span>
-          </span>
-        </div>
+        {'secondaryHref' in content ? (
+          <a className="home-action-card" href={content.secondaryHref}>
+            <span className="home-card-icon secondary"><ClockCircleOutlined aria-hidden="true" /></span>
+            <span>
+              <strong>{content.secondary}</strong>
+              <span>{content.secondaryDescription}</span>
+            </span>
+          </a>
+        ) : (
+          <div className="home-action-card">
+            <span className="home-card-icon secondary"><ClockCircleOutlined aria-hidden="true" /></span>
+            <span>
+              <strong>{content.secondary}</strong>
+              <span>{content.secondaryDescription}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       <Card title={<h2>{content.lead}</h2>} className="home-lead">

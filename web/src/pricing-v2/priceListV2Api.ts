@@ -82,6 +82,13 @@ export async function overridePriceListItemPrice(
   return parseJsonOrThrow<PriceListItemDto>(response, 'PATCH /api/price-lists-v2/items/{itemId}/override')
 }
 
+export async function listPriceLists(accessToken: string): Promise<PriceListDto[]> {
+  const response = await fetch(`${API_BASE_URL}/api/price-lists-v2`, {
+    headers: authHeaders(accessToken),
+  })
+  return parseJsonOrThrow<PriceListDto[]>(response, 'GET /api/price-lists-v2')
+}
+
 export async function getPriceList(accessToken: string, priceListId: number): Promise<PriceListDetailDto> {
   const response = await fetch(`${API_BASE_URL}/api/price-lists-v2/${priceListId}`, {
     headers: authHeaders(accessToken),

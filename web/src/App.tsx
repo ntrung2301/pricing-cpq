@@ -10,6 +10,7 @@ import { homeContent } from './workspace/homeContent'
 import { EntitiesList } from './entities/EntitiesList'
 import { VehiclePartSelectionScreen } from './configurator/VehiclePartSelectionScreen'
 import { ProductsPage } from './products/ProductsPage'
+import { PriceListsPage } from './pricelists/PriceListsPage'
 
 function subscribe(onChange: () => void) {
   window.addEventListener('hashchange', onChange)
@@ -27,17 +28,18 @@ function Workspace() {
 
   const role = getWorkspaceRole(auth.user.access_token)
   const pages: WorkspacePage[] = ['home']
-  if (role) pages.push('products', 'configurator')
+  if (role) pages.push('products', 'configurator', 'price-lists')
   if (role === 'pricing_admin') pages.push('definitions')
   const requested = hash.slice(1) === 'catalog' ? 'configurator' : hash.slice(1)
   const page = pages.find((candidate) => candidate === requested) ?? 'home'
   const home = role && homeContent[role]
-  const titles = {
+  const titles: Record<WorkspacePage, string | undefined> = {
     home: home ? home.title : 'Workspace',
     products: undefined,
     catalog: 'Catalog',
     configurator: 'Chọn xe / Chọn part',
     definitions: undefined,
+    'price-lists': 'Price Lists',
   }
 
   return (
@@ -59,6 +61,7 @@ function Workspace() {
       {page === 'products' && <ProductsPage />}
       {page === 'definitions' && <EntitiesList accessToken={auth.user.access_token} />}
       {page === 'configurator' && <VehiclePartSelectionScreen accessToken={auth.user.access_token} />}
+      {page === 'price-lists' && <PriceListsPage accessToken={auth.user.access_token} />}
     </AppShell>
   )
 }

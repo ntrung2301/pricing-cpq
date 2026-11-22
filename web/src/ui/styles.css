@@ -425,3 +425,48 @@ h1, h2, h3, h4 {
 .ui-data-grid tr.instance-row--selected > td {
   background: var(--blue-tint);
 }
+
+/* web/src/pricelists/PriceListsPage.tsx — same "clickable name" pattern as
+   .product-name-action, kept separate since the two pages are unrelated. */
+.price-list-code-action {
+  padding: 0;
+  border: 0;
+  color: var(--workspace-accent);
+  background: transparent;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.price-list-code-action:hover {
+  text-decoration: underline;
+}
+
+.price-list-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.price-list-summary dt {
+  color: var(--workspace-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.price-list-summary dd {
+  margin: 2px 0 0;
+  font-weight: 650;
+}
+
+.price-list-item-block {
+  padding-top: 16px;
+  border-top: 1px solid var(--workspace-divider);
+}
+
+.price-list-item-block h3 {
+  margin: 0 0 8px;
+  font: 700 15px/1.3 var(--font-display);
+}
