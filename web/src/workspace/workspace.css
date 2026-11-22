@@ -6,7 +6,12 @@
  */
 
 .workspace {
-  min-height: 100vh;
+  /* height (not min-height): establishes a real, bounded height chain down
+     to .workspace-content so DataPage's "fit" mode (web/src/ui/styles.css)
+     has a real 100% to fill instead of collapsing to 0 — .workspace-content
+     below carries its own overflow so ordinary (non-"fit") pages still
+     scroll exactly as before. */
+  height: 100vh;
   background: var(--canvas);
 }
 
@@ -170,6 +175,9 @@
 
 .workspace-content {
   outline: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .workspace-search-input {

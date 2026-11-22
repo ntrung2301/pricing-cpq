@@ -3147,3 +3147,55 @@ chung. Cả 2 đều có lý do kỹ thuật cụ thể ở trên, không phải
 cầu — nhưng PO có thể muốn khác (vd. thêm Home/Products vào luồng chính ở
 sprint sau, hoặc chấp nhận bỏ `role="table"` assertion để dùng `DataTable`
 đồng bộ 100%).
+
+## D-052 — Wire Home/Products vào navigation chính + vá bug layout "fit" DataTable ẩn toàn bộ dữ liệu (2026-11-22, orchestrator)
+
+**Bối cảnh**: PO yêu cầu thêm `Home`/`Products` (đã có component Ant Design
+từ D-048, chưa gắn vào `pages` của `App.tsx` theo NEEDS-PO-REVIEW D-051) vào
+navigation chính.
+
+**Thay đổi**:
+1. `web/src/App.tsx`: thêm `'home'`, `'products'` vào mảng `pages`; render
+   `<HomeScreen role={getWorkspaceRole(...) ?? 'sales'} />` và
+   `<ProductsPage />` cho 2 trang này. Giữ nguyên trang mặc định
+   `configurator` (không đổi hành vi landing page sau login — 3 E2E spec cũ
+   phụ thuộc điều này).
+2. `web/src/workspace/homeContent.ts`: `href: '#catalog'` (2 chỗ, vai trò
+   `sales`/`sales_manager`) trỏ tới 1 trang không tồn tại trong `pages` —
+   sửa thành `href: '#configurator'` (trang thật gần nghĩa nhất hiện có) để
+   tránh link chết ngay trong tính năng đang thêm.
+
+**Bug phát hiện khi verify qua browser thật (Chrome automation) — không
+phải chỉ đọc code**: trang Products render ra **bảng trống hoàn toàn**
+(0 dòng nhìn thấy), dù `read_page` xác nhận dữ liệu THẬT có trong DOM
+(PRD-001..PRD-004...). Root cause: `web/src/ui/DataPage.tsx`'s `fit` mode
+(`.ui-data-page--fit { height: 100% }`, `web/src/ui/styles.css`) cần 1
+chuỗi `height` thật (không phải `auto`) từ `html`/`body`/`#root` xuống tới
+`.workspace-content` — nhưng `.workspace` (D-051, `AppShell.tsx`) chỉ có
+`min-height: 100vh` và không có file nào từng đặt `height:100%` lên
+`html`/`body`/`#root`. Percentage height trên 1 ancestor `auto`-height luôn
+collapse về 0 — `.ant-table-body` (scroll container thật của rc-table) vì
+vậy có chiều cao 0px dù chứa đủ hàng. Bug này có từ D-051 (khi
+`ProductsPage` lần đầu được viết lại bằng Ant) nhưng **chưa từng lộ ra**
+vì D-051's agent chỉ verify bằng browser cho Login/Configurator/Catalog
+definitions — không bao gồm Products (trang này chỉ thực sự được mount
+vào `AppShell` lần đầu tiên ở chính thay đổi này).
+
+**Vá**: `web/src/index.css` thêm `html, body, #root { height: 100% }`.
+`web/src/workspace/workspace.css`: `.workspace` đổi `min-height: 100vh` →
+`height: 100vh` (bounded, không phải chỉ sàn tối thiểu); `.workspace-content`
+thêm `flex: 1; min-height: 0; overflow-y: auto` — đây là điểm mấu chốt để
+các trang KHÔNG dùng `fit` (Home/Configurator/Catalog definitions) vẫn cuộn
+trang bình thường như cũ (chỉ đổi từ "cuộn cả window" sang "cuộn trong
+`.workspace-content`", topbar/sidebar cố định — hành vi tương đương, không
+mất nội dung).
+
+**Verify**: `npx vitest run` → 41/41 pass (không đổi). `npx playwright
+test` → 4/4 pass, chạy 2 lần liên tiếp (gồm cả `vehicle-part-selection`,
+luồng nghiệp vụ dài nhất, không regress). Browser thật xác nhận lại:
+Products hiện đủ 25 dòng + pagination; Home/Catalog definitions/
+Configurator (cuộn dài, danh sách part) đều hiển thị và cuộn đúng sau khi
+đổi CSS.
+
+Hệ quả: không đụng business logic nào — thuần CSS layout + 2 route mới
+được wire.

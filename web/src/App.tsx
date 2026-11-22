@@ -5,10 +5,12 @@ import { UIProvider } from './ui'
 import { LoginScreen } from './auth/LoginScreen'
 import { getWorkspaceRole } from './auth/workspaceRole'
 import { AppShell, type WorkspacePage } from './workspace/AppShell'
+import { HomeScreen } from './workspace/HomeScreen'
 import { EntitiesList } from './entities/EntitiesList'
 import { VehiclePartSelectionScreen } from './configurator/VehiclePartSelectionScreen'
+import { ProductsPage } from './products/ProductsPage'
 
-const pages: WorkspacePage[] = ['configurator', 'definitions']
+const pages: WorkspacePage[] = ['home', 'products', 'configurator', 'definitions']
 const pageTitles: Record<WorkspacePage, string> = {
   home: 'Home',
   products: 'Products',
@@ -71,6 +73,8 @@ function App() {
           roleLabel={getWorkspaceRole(auth.user.access_token)}
           onSignOut={() => auth.removeUser()}
         >
+          {page === 'home' && <HomeScreen role={getWorkspaceRole(auth.user.access_token) ?? 'sales'} />}
+          {page === 'products' && <ProductsPage />}
           {page === 'definitions' && <EntitiesList accessToken={auth.user.access_token} />}
           {page === 'configurator' && (
             <VehiclePartSelectionScreen accessToken={auth.user.access_token} />
